@@ -301,6 +301,16 @@ The recipes shown in the figure are provided in `jobs/asd/call/`.
 <img src="docs/results.png" width="800">
 
 
+## 🔗 Related Tools
+
+**[Wandas](https://github.com/kasahart/wandas)** — A Python library for efficient signal and waveform analysis.
+Wandas provides pandas-like data structures for time-domain, spectral, and spectrogram analysis, with seamless Matplotlib integration.
+It can be used alongside ASDKit for interactive exploration and visualization of audio signals.
+
+```bash
+pip install wandas
+```
+
 ## Information
 
 [Other details](./docs/details.md)
