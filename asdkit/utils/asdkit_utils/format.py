@@ -14,7 +14,7 @@ def get_traintest_dir_dict(dcase: str) -> Dict[str, list]:
             "test": ["test"],
             "supplemental": ["supplemental"],
         }
-    elif dcase in ["dcase2020", "dcase2022", "dcase2023", "dcase2024"]:
+    elif dcase in ["dcase2020", "dcase2022", "dcase2023", "dcase2024", "dcase2026"]:
         traintest_dir_dict = {"train": ["train"], "test": ["test"]}
     elif dcase in ["dcase2021"]:
         traintest_dir_dict = {
@@ -35,6 +35,8 @@ def check_src_dir(src_dir: Path, dcase: str):
 
     for split_de in ["dev", "eval"]:
         split_de_dir = src_dir / f"{split_de}_data/raw"
+        if not split_de_dir.exists():
+            raise FileNotFoundError(f"{split_de_dir} does not exist.")
         est_machines = [d.name for d in split_de_dir.iterdir() if d.is_dir()]
         ref_machines = MACHINE_DICT[f"{dcase}-{split_de}"]  # type: ignore
         if sorted(est_machines) != sorted(ref_machines):
@@ -56,6 +58,8 @@ class RenameTestPath:
         # data/original/dcase2024/dev_data/raw/bearing/test/hoge.wav
         self.dcase = dcase
         self.path_dict = defaultdict(dict)  # type: ignore
+        if self.dcase == "dcase2026":
+            return
         with open(f"data/eval_data_list_{dcase[5:]}.csv", "r") as f:
             for line in f:
                 csv_data_list = line.strip().split(",")
@@ -115,6 +119,9 @@ class RenameTestPath:
             raise ValueError(f"Unknown split_de: {split_de}.")
 
         # path is in eval_data/test
+        if self.dcase == "dcase2026":
+            return self.postprocess(wav_path)
+
         machine = wav_path.parents[1].name
         renamed_wav_path = wav_path.parent / self.path_dict[machine][wav_path.name]
         return self.postprocess(renamed_wav_path)

@@ -18,6 +18,8 @@ elif [ "${dcase}" = "dcase2024" ]; then
   ./dcase2024.sh "${data_dir}/original"
 elif [ "${dcase}" = "dcase2025" ]; then
   ./dcase2025.sh "${data_dir}/original"
+elif [ "${dcase}" = "dcase2026" ]; then
+  ./dcase2026.sh "${data_dir}/original"
 else
   echo "Unknown dcase: ${dcase}"
   exit 1

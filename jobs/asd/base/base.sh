@@ -13,6 +13,8 @@ get_machines() {
         machines=("3DPrinter" "AirCompressor" "bearing" "BrushlessMotor" "fan" "gearbox" "HairDryer" "HoveringDrone" "RoboticArm" "Scanner" "slider" "ToothBrush" "ToyCar" "ToyCircuit" "ToyTrain" "valve")
     elif [ "$1" = "dcase2025" ]; then
         machines=("AutoTrash" "BandSealer" "bearing" "CoffeeGrinder" "fan" "gearbox" "HomeCamera" "Polisher" "ScrewFeeder" "slider" "ToyCar" "ToyPet" "ToyRCCar" "ToyTrain" "valve")
+    elif [ "$1" = "dcase2026" ]; then
+        machines=("BlowerDustCollector" "Sander" "SewingMachine" "ToothBrush" "ToyCar" "ToyCarEmu" "ToyDrone" "bearingEmu" "fan" "gearboxEmu" "sliderEmu" "valveEmu")
     else
         machines="InvalidDCASE"
     fi
@@ -75,4 +77,3 @@ echo "machines: $machines"
 
 # change directory to project root
 cd ../../..
-

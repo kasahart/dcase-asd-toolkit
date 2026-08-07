@@ -172,6 +172,9 @@ class BasePLAUCFrontend(BasePLFrontend):
     ):
         is_normal_np = np.array(batch["is_normal"])
         is_target_np = np.array(batch["is_target"])
+        if np.any(is_normal_np < 0) or np.any(is_target_np < 0):
+            logger.warning("Skip validation AUC because labels or domains are unknown.")
+            return
         is_anomaly_tensor = 1 - torch.tensor(batch["is_normal"])
         for auc_model_key in self.auroc_model_dict:
             auc_type = auc_model_key.split("/")[0]

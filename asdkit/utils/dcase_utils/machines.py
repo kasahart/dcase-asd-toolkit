@@ -108,4 +108,20 @@ MACHINE_DICT = {
         "ToyPet",
         "ToyRCCar",
     ],
+    "dcase2026-dev": [
+        "ToyCar",
+        "ToyCarEmu",
+        "bearingEmu",
+        "fan",
+        "gearboxEmu",
+        "sliderEmu",
+        "valveEmu",
+    ],
+    "dcase2026-eval": [
+        "BlowerDustCollector",
+        "Sander",
+        "SewingMachine",
+        "ToothBrush",
+        "ToyDrone",
+    ],
 }

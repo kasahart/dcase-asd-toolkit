@@ -4,7 +4,7 @@
 
 ASDKit is a toolkit for anomalous sound detection (ASD) task.
 <br>
-ASDKit provides recipes for various ASD methods and supports evaluation on the DCASE 2020-2024 Task 2 datasets.
+ASDKit provides recipes for various ASD methods and supports evaluation on the DCASE 2020-2026 Task 2 datasets.
 
 
 ## 🚀 Easy Start
@@ -31,7 +31,8 @@ ASDKit provides recipes for various ASD methods and supports evaluation on the D
 **How to**
 - Specify both `data_dir` and `dcase` in `jobs/download/run.sh`.
 - `data_dir`: The directory where the dataset will be stored. By default, it is set to the parent directory of this repository. If you change this, make sure to update `data_dir` in the other scripts accordingly.
-- `dcase`: The name of the dataset. Available options are: `dcase2021`, `dcase2022`, `dcase2023`, `dcase2024`, and `dcase2025`.
+- `dcase`: The name of the dataset. Available options are: `dcase2021`, `dcase2022`, `dcase2023`, `dcase2024`, `dcase2025`, and `dcase2026`.
+- For DCASE 2026 Task 2, the download script uses the updated ToyCar archive `dev_ToyCar_r2.zip` and downloads the development, additional training, and evaluation test data.
 
 ```bash
 [dcase-asd-toolkit]$ cd jobs/download
@@ -157,7 +158,7 @@ dcase-asd-toolkit
 
 
 ## 📋 Supported Experimental Conditions
-ASDKit supports the DCASE 2020-2024 conditions.
+ASDKit supports the DCASE 2020-2026 conditions.
 Across these conditions, the machine types, the provided meta-information labels, and the evaluation scores differ.
 For all conditions, the datasets are divided into official *dev* and *eval* subsets, and evaluation scores are aggregated separately for each subset.
 The evaluation score is based on a combination of several types of AUC.
@@ -174,7 +175,7 @@ ASDKit automatically computes the official evaluation scores according to the re
 | mix_auc / mix_pauc | AUC / pAUC computed using normal and anomalous sounds from both the source and target domains. |
 | smix_auc       | AUC computed using normal and anomalous sounds in the source domain and anomalous sounds in the target domain. |
 | tmix_auc       | AUC computed using normal and anomalous sounds in the target domain and anomalous sounds in the source domain. |
-| official20-24  | Official evaluation score for DCASE 2020-2024 Challenge Task2. These are computed combining the above metrics. |
+| official20-26  | Official evaluation score for DCASE 2020-2026 Challenge Task2. These are computed combining the above metrics. |
 
 
 

@@ -28,19 +28,48 @@ def parse_path_selector(selector: str) -> List[str]:
     return path_list  # type: ignore
 
 
-def torch_mono_wav_load(path: str) -> torch.Tensor:
+def torch_mono_wav_load(path: str, audio_channel: int | str = "first") -> torch.Tensor:
     wave, sr = torchaudio.load(path)
-    assert sr == 16000 and wave.shape[0] == 1
-    return wave[0]
+    if sr != 16000:
+        raise ValueError(f"Unexpected sampling rate: {sr}")
+    if wave.ndim != 2:
+        raise ValueError(f"Unexpected wave shape: {wave.shape}")
+
+    if wave.shape[0] == 1:
+        return wave[0]
+
+    if isinstance(audio_channel, int):
+        if audio_channel < 0 or audio_channel >= wave.shape[0]:
+            raise ValueError(
+                f"audio_channel={audio_channel} is out of range for {wave.shape[0]} channels"
+            )
+        return wave[audio_channel]
+
+    if audio_channel in ["first", "left", "near"]:
+        return wave[0]
+    if audio_channel in ["second", "right", "far"]:
+        if wave.shape[0] < 2:
+            raise ValueError("second/right/far channel was requested for mono audio")
+        return wave[1]
+    if audio_channel == "mean":
+        return wave.mean(dim=0)
+    if audio_channel == "diff":
+        if wave.shape[0] < 2:
+            raise ValueError("diff channel was requested for mono audio")
+        return wave[0] - wave[1]
+
+    raise ValueError(f"Unknown audio_channel: {audio_channel}")
 
 
 class WaveDataset(Dataset):
     def __init__(
         self,
         path_selector_list: List[str],
+        audio_channel: int | str = "first",
     ):
         super().__init__()
         self.path_list = []
+        self.audio_channel = audio_channel
 
         logger.info("Start Loading Paths")
         for selector in path_selector_list:
@@ -48,7 +77,9 @@ class WaveDataset(Dataset):
         logger.info("Finished Loading Paths")
 
     def get_item(self, idx) -> dict:
-        wave = torch_mono_wav_load(path=self.path_list[idx])
+        wave = torch_mono_wav_load(
+            path=self.path_list[idx], audio_channel=self.audio_channel
+        )
         items = {
             "wave": wave,
             "path": self.path_list[idx],
@@ -67,10 +98,12 @@ class AudioFeatDataset(Dataset):
         self,
         path_selector_list: List[str],
         audio_feat_cfg: dict,
+        audio_channel: int | str = "first",
     ):
         super().__init__()
         self.audio_feat_extractor: BaseAudioFeature = instantiate_tgt(audio_feat_cfg)
         self.path_list = []
+        self.audio_channel = audio_channel
 
         logger.info("Start Loading Paths")
         for selector in path_selector_list:
@@ -85,7 +118,9 @@ class AudioFeatDataset(Dataset):
         audio_feat_list = []
         path_idx_list = []
         for i, path in enumerate(tqdm.tqdm(self.path_list)):
-            wave = torch_mono_wav_load(path=path)[None]  # 1, T
+            wave = torch_mono_wav_load(path=path, audio_channel=self.audio_channel)[
+                None
+            ]  # 1, T
             x = self.audio_feat_extractor(wave)  # N x D
             audio_feat_list += [x]
             path_idx_list += [i] * len(x)

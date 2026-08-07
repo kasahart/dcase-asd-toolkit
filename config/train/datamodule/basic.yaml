@@ -12,6 +12,7 @@ train:
     shuffle: true
   dataset:
     tgt_class: asdkit.datasets.WaveDataset
+    audio_channel: first
     path_selector_list:
       - "${data_dir}/formatted/${dcase}/raw/*/train/*.wav"
   batch_sampler: null
@@ -21,4 +22,3 @@ train:
     sec: ${datamodule.sec}
     shuffle: true
     label_dict_path: ${label_dict_path}
-

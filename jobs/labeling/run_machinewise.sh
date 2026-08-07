@@ -24,3 +24,7 @@ done
 for machine in "AutoTrash" "BandSealer" "bearing" "CoffeeGrinder" "fan" "gearbox" "HomeCamera" "Polisher" "ScrewFeeder" "slider" "ToyCar" "ToyPet" "ToyRCCar" "ToyTrain" "valve"; do
 python -m asdkit.bin.label experiments="dcase2025_machinewise" +machine=$machine
 done
+
+for machine in "BlowerDustCollector" "Sander" "SewingMachine" "ToothBrush" "ToyCar" "ToyCarEmu" "ToyDrone" "bearingEmu" "fan" "gearboxEmu" "sliderEmu" "valveEmu"; do
+python -m asdkit.bin.label experiments="dcase2026_machinewise" +machine=$machine
+done
