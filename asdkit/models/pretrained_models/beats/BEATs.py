@@ -145,11 +145,38 @@ class BEATs(nn.Module):
     ):
         fbank = self.preprocess(source, fbank_mean=fbank_mean, fbank_std=fbank_std)
 
+        return self._extract_features_from_fbank(fbank, padding_mask=padding_mask)
+
+    def extract_features_with_grid(
+            self,
+            source: torch.Tensor,
+            padding_mask: Optional[torch.Tensor] = None,
+            fbank_mean: float = 15.41663,
+            fbank_std: float = 6.55582,
+    ):
+        """Extract features and return the patch grid shape without a second pass.
+
+        Returns the same feature output and padding mask as :meth:`extract_features`,
+        followed by ``(T_p, F_p)`` captured from the patch convolution output.
+        """
+        fbank = self.preprocess(source, fbank_mean=fbank_mean, fbank_std=fbank_std)
+        return self._extract_features_from_fbank(
+            fbank, padding_mask=padding_mask, return_grid_shape=True
+        )
+
+    def _extract_features_from_fbank(
+            self,
+            fbank: torch.Tensor,
+            padding_mask: Optional[torch.Tensor] = None,
+            return_grid_shape: bool = False,
+    ):
+
         if padding_mask is not None:
             padding_mask = self.forward_padding_mask(fbank, padding_mask)
 
         fbank = fbank.unsqueeze(1)
         features = self.patch_embedding(fbank)
+        grid_shape = (features.shape[2], features.shape[3])
         features = features.reshape(features.shape[0], features.shape[1], -1)
         features = features.transpose(1, 2)
         features = self.layer_norm(features)
@@ -180,50 +207,17 @@ class BEATs(nn.Module):
 
             lprobs = torch.sigmoid(logits)
 
-            return lprobs, padding_mask
+            output = (lprobs, padding_mask)
         else:
-            return x, padding_mask
+            output = (x, padding_mask)
+
+        if return_grid_shape:
+            return output[0], output[1], grid_shape
+        return output
 
     def extract_features_from_fbank(
             self,
             fbank: torch.Tensor,
             padding_mask: Optional[torch.Tensor] = None,
     ):
-        if padding_mask is not None:
-            padding_mask = self.forward_padding_mask(fbank, padding_mask)
-
-        fbank = fbank.unsqueeze(1)
-        features = self.patch_embedding(fbank)
-        features = features.reshape(features.shape[0], features.shape[1], -1)
-        features = features.transpose(1, 2)
-        features = self.layer_norm(features)
-
-        if padding_mask is not None:
-            padding_mask = self.forward_padding_mask(features, padding_mask)
-
-        if self.post_extract_proj is not None:
-            features = self.post_extract_proj(features)
-
-        x = self.dropout_input(features)
-
-        x, layer_results = self.encoder(
-            x,
-            padding_mask=padding_mask,
-        )
-
-        if self.predictor is not None:
-            x = self.predictor_dropout(x)
-            logits = self.predictor(x)
-
-            if padding_mask is not None and padding_mask.any():
-                logits[padding_mask] = 0
-                logits = logits.sum(dim=1)
-                logits = logits / (~padding_mask).sum(dim=1).unsqueeze(-1).expand_as(logits)
-            else:
-                logits = logits.mean(dim=1)
-
-            lprobs = torch.sigmoid(logits)
-
-            return lprobs, padding_mask
-        else:
-            return x, padding_mask
+        return self._extract_features_from_fbank(fbank, padding_mask=padding_mask)
