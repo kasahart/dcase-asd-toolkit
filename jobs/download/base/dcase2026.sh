@@ -4,6 +4,7 @@ set -euo pipefail
 
 dev_dir="${dst_dir}/dcase2026/dev_data/raw"
 eval_dir="${dst_dir}/dcase2026/eval_data/raw"
+evaluator_dir="${dst_dir}/dcase2026/evaluator"
 mkdir -p "${dev_dir}"
 mkdir -p "${eval_dir}"
 
@@ -46,3 +47,8 @@ for machine_type in \
 curl -L -C - -O "https://zenodo.org/records/20437238/files/eval_data_${machine_type}_test.zip"
 unzip -n "eval_data_${machine_type}_test.zip"
 done
+
+# Download the official post-challenge evaluation labels and evaluator.
+git clone --depth 1 \
+    "https://github.com/nttcslab/dcase2026_task2_evaluator.git" \
+    "${evaluator_dir}"

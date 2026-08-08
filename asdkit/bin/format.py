@@ -22,7 +22,10 @@ def main(dcase: str, data_dir: str, link_mode: str) -> None:
         raise FileExistsError(f"{dst_dir} already exists.")
 
     traintest_dir_dict = get_traintest_dir_dict(dcase=dcase)
-    renamer = RenameTestPath(dcase=dcase)
+    eval_ground_truth_dir = None
+    if dcase == "dcase2026":
+        eval_ground_truth_dir = src_dir / "evaluator/ground_truth_attributes"
+    renamer = RenameTestPath(dcase=dcase, eval_ground_truth_dir=eval_ground_truth_dir)
     for split_de in ["dev", "eval"]:
         for machine in tqdm.tqdm(MACHINE_DICT[f"{dcase}-{split_de}"]):  # type: ignore
             for split_tt_dst, split_tt_src_list in traintest_dir_dict.items():

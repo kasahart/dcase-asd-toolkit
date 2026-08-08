@@ -32,7 +32,7 @@ ASDKit provides recipes for various ASD methods and supports evaluation on the D
 - Specify both `data_dir` and `dcase` in `jobs/download/run.sh`.
 - `data_dir`: The directory where the dataset will be stored. By default, it is set to the parent directory of this repository. If you change this, make sure to update `data_dir` in the other scripts accordingly.
 - `dcase`: The name of the dataset. Available options are: `dcase2021`, `dcase2022`, `dcase2023`, `dcase2024`, `dcase2025`, and `dcase2026`.
-- For DCASE 2026 Task 2, the download script uses the updated ToyCar archive `dev_ToyCar_r2.zip` and downloads the development, additional training, and evaluation test data.
+- For DCASE 2026 Task 2, the download script uses the updated ToyCar archive `dev_ToyCar_r2.zip` and downloads the development, additional training, evaluation test data, and the official post-challenge evaluation labels/evaluator.
 
 ```bash
 [dcase-asd-toolkit]$ cd jobs/download
@@ -54,6 +54,7 @@ ASDKit provides recipes for various ASD methods and supports evaluation on the D
 
 This process creates a formatted dataset in which the filename format and dataset structure are unified across all DCASE versions.  
 Additionally, it assigns ground-truth normal/anomalous labels to the test data. These labels are concealed during the challenge and released by the organizers afterward.
+For DCASE 2026, formatting reads the official filename correspondence tables downloaded to `original/dcase2026/evaluator/ground_truth_attributes` and assigns the released normal/anomaly and source/target labels to evaluation clips.
 
 
 **How to**

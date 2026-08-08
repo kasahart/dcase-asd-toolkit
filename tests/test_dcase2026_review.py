@@ -12,7 +12,18 @@ from asdkit.datasets import torch_dataset
 from asdkit.datasets.collators import DCASEWaveCollator
 from asdkit.frontends.auroc import AUROC
 from asdkit.utils.asdkit_utils.extract import restore_dataset_args
+from asdkit.utils.asdkit_utils.format import RenameTestPath
 from asdkit.utils.asdkit_utils.visualize.plot import get_cfg_list_of_dict, get_u_idx
+from asdkit.utils.dcase_utils import MACHINE_DICT, get_dcase_info
+
+
+def make_dcase2026_ground_truth(ground_truth_dir):
+    ground_truth_dir.mkdir()
+    for machine in MACHINE_DICT["dcase2026-eval"]:
+        (ground_truth_dir / f"ground_truth_{machine}_section_00_test.csv").write_text(
+            "section_00_0000.wav,"
+            "section_00_target_test_anomaly_0042_operating_state\n"
+        )
 
 
 def test_auroc_compute_without_updates_returns_none():
@@ -107,12 +118,44 @@ def test_unknown_evaluation_samples_are_visualized():
     is_target = np.array([0, -1, 1])
     is_normal = np.array([1, -1, 0])
 
-    unknown_idx = get_u_idx(
-        is_test, is_target, is_normal, "test_unknown_unknown"
-    )
+    unknown_idx = get_u_idx(is_test, is_target, is_normal, "test_unknown_unknown")
     plot_cfg = get_cfg_list_of_dict(is_test, is_target, is_normal)[1]
 
     np.testing.assert_array_equal(unknown_idx, [False, True, False])
     np.testing.assert_array_equal(
         plot_cfg["test_unknown_unknown"]["u_idx"], unknown_idx
     )
+
+
+def test_dcase2026_evaluation_ground_truth_is_applied(tmp_path):
+    ground_truth_dir = tmp_path / "ground_truth_attributes"
+    make_dcase2026_ground_truth(ground_truth_dir)
+    wav_path = (
+        tmp_path / "original/dcase2026/eval_data/raw/ToyDrone/test/section_00_0000.wav"
+    )
+
+    renamed_path = RenameTestPath("dcase2026", eval_ground_truth_dir=ground_truth_dir)(
+        wav_path
+    )
+
+    assert renamed_path.name == (
+        "section_00_target_test_anomaly_0042_operating_state.wav"
+    )
+    assert get_dcase_info(str(renamed_path), "is_normal") == 0
+    assert get_dcase_info(str(renamed_path), "is_target") == 1
+
+
+def test_dcase2026_evaluation_ground_truth_is_required():
+    with pytest.raises(ValueError, match="eval_ground_truth_dir is required"):
+        RenameTestPath("dcase2026")
+
+
+def test_dcase2026_evaluation_ground_truth_must_cover_query(tmp_path):
+    ground_truth_dir = tmp_path / "ground_truth_attributes"
+    make_dcase2026_ground_truth(ground_truth_dir)
+    wav_path = (
+        tmp_path / "original/dcase2026/eval_data/raw/ToyDrone/test/section_00_9999.wav"
+    )
+
+    with pytest.raises(KeyError, match="No evaluation ground truth mapping"):
+        RenameTestPath("dcase2026", eval_ground_truth_dir=ground_truth_dir)(wav_path)

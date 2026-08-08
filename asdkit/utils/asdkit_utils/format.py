@@ -1,7 +1,8 @@
+import csv
 from collections import defaultdict
 from itertools import chain
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 from asdkit.utils.dcase_utils import MACHINE_DICT
 
@@ -54,11 +55,18 @@ def check_src_dir(src_dir: Path, dcase: str):
 class RenameTestPath:
     """Rename wav_path to a unified format and append ground-truth normal/anomaly label."""
 
-    def __init__(self, dcase: str):
+    def __init__(self, dcase: str, eval_ground_truth_dir: Optional[Path] = None):
         # data/original/dcase2024/dev_data/raw/bearing/test/hoge.wav
         self.dcase = dcase
         self.path_dict = defaultdict(dict)  # type: ignore
         if self.dcase == "dcase2026":
+            if eval_ground_truth_dir is None:
+                raise ValueError(
+                    "eval_ground_truth_dir is required to format the DCASE 2026 "
+                    "evaluation data. Download the official DCASE 2026 Task 2 "
+                    "evaluator first."
+                )
+            self._load_dcase2026_ground_truth(eval_ground_truth_dir)
             return
         with open(f"data/eval_data_list_{dcase[5:]}.csv", "r") as f:
             for line in f:
@@ -70,6 +78,50 @@ class RenameTestPath:
                     assert csv_data_list[0].endswith(".wav")
                     assert csv_data_list[1].endswith(".wav")
                     self.path_dict[current_machine][csv_data_list[0]] = csv_data_list[1]
+
+    def _load_dcase2026_ground_truth(self, ground_truth_dir: Path) -> None:
+        """Load the official evaluation filename correspondence tables."""
+        if not ground_truth_dir.is_dir():
+            raise FileNotFoundError(
+                f"DCASE 2026 ground truth directory does not exist: "
+                f"{ground_truth_dir}"
+            )
+
+        for machine in MACHINE_DICT["dcase2026-eval"]:
+            csv_path = ground_truth_dir / f"ground_truth_{machine}_section_00_test.csv"
+            if not csv_path.is_file():
+                raise FileNotFoundError(
+                    f"DCASE 2026 ground truth file does not exist: {csv_path}"
+                )
+
+            with csv_path.open(newline="") as f:
+                for line_no, row in enumerate(csv.reader(f), start=1):
+                    if len(row) != 2:
+                        raise ValueError(
+                            f"Expected two columns in {csv_path}:{line_no}, got {row}"
+                        )
+                    original_name, labeled_stem = row
+                    labeled_name = (
+                        labeled_stem
+                        if labeled_stem.endswith(".wav")
+                        else f"{labeled_stem}.wav"
+                    )
+                    split_name = labeled_name.split("_")
+                    if (
+                        len(split_name) < 6
+                        or split_name[2] not in ["source", "target"]
+                        or split_name[4] not in ["normal", "anomaly"]
+                    ):
+                        raise ValueError(
+                            f"Invalid labeled filename in {csv_path}:{line_no}: "
+                            f"{labeled_name}"
+                        )
+                    if original_name in self.path_dict[machine]:
+                        raise ValueError(
+                            f"Duplicate filename in {csv_path}:{line_no}: "
+                            f"{original_name}"
+                        )
+                    self.path_dict[machine][original_name] = labeled_name
 
     def postprocess(self, wav_path: Path) -> Path:
         """This is postprocess function for dcase2020."""
@@ -119,9 +171,12 @@ class RenameTestPath:
             raise ValueError(f"Unknown split_de: {split_de}.")
 
         # path is in eval_data/test
-        if self.dcase == "dcase2026":
-            return self.postprocess(wav_path)
-
         machine = wav_path.parents[1].name
-        renamed_wav_path = wav_path.parent / self.path_dict[machine][wav_path.name]
+        try:
+            renamed_name = self.path_dict[machine][wav_path.name]
+        except KeyError as error:
+            raise KeyError(
+                f"No evaluation ground truth mapping for {machine}/{wav_path.name}"
+            ) from error
+        renamed_wav_path = wav_path.parent / renamed_name
         return self.postprocess(renamed_wav_path)
