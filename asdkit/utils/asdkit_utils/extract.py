@@ -35,6 +35,7 @@ def extraction_setup_restore(
     frontend = restore_plfrontend(cfg=cfg, past_cfg=past_cfg)
 
     # DataLoader
+    restore_dataset_args(cfg=cfg, past_cfg=past_cfg)
     check_cfg_with_past_cfg(cfg=cfg, past_cfg=past_cfg)
     dataloader_dict = {
         "train": PLDataModule.get_loader(dm_config=cfg.datamodule.train),
@@ -101,6 +102,21 @@ def check_collator_args(current_collator: dict, past_collator: dict) -> None:
             logger.warning(
                 f"cfg.datamodule.collator.{key} ({current_collator.get(key)}) is different from past_cfg.datamodule.collator.{key} ({past_collator.get(key)})."
             )
+
+
+def restore_dataset_args(cfg: MainExtractConfig, past_cfg: MainTrainConfig) -> None:
+    audio_channel = past_cfg.datamodule.train.dataset.get("audio_channel", "first")
+    for split in ["train", "test"]:
+        dataset = getattr(cfg.datamodule, split).dataset
+        current_audio_channel = dataset.get("audio_channel", "first")
+        if current_audio_channel != audio_channel:
+            logger.info(
+                "Restore datamodule.%s.dataset.audio_channel from %s to %s.",
+                split,
+                current_audio_channel,
+                audio_channel,
+            )
+        dataset["audio_channel"] = audio_channel
 
 
 def check_cfg_with_past_cfg(cfg: MainExtractConfig, past_cfg: MainTrainConfig) -> None:

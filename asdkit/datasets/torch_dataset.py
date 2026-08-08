@@ -35,9 +35,6 @@ def torch_mono_wav_load(path: str, audio_channel: int | str = "first") -> torch.
     if wave.ndim != 2:
         raise ValueError(f"Unexpected wave shape: {wave.shape}")
 
-    if wave.shape[0] == 1:
-        return wave[0]
-
     if isinstance(audio_channel, int):
         if audio_channel < 0 or audio_channel >= wave.shape[0]:
             raise ValueError(

@@ -15,6 +15,9 @@ class AUROC:
         self.y_target.append(target)
 
     def compute(self) -> Optional[float]:
+        if not self.y_score or not self.y_target:
+            return None
+
         y_score = torch.cat(self.y_score).detach().cpu().numpy()
         y_target = torch.cat(self.y_target).detach().cpu().numpy()
         # y_target is normal / anomaly labels

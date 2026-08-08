@@ -23,6 +23,8 @@ def get_u_idx(
         u_idx = u_idx & (is_target == 0)
     elif label_split[1] == "target":
         u_idx = u_idx & (is_target == 1)
+    elif label_split[1] == "unknown":
+        u_idx = u_idx & (is_target < 0)
     else:
         raise ValueError(f"Unexpected label: {label}")
     # normal/anomaly
@@ -30,6 +32,8 @@ def get_u_idx(
         u_idx = u_idx & (is_normal == 1)
     elif label_split[2] == "anomaly":
         u_idx = u_idx & (is_normal == 0)
+    elif label_split[2] == "unknown":
+        u_idx = u_idx & (is_normal < 0)
     else:
         raise ValueError(f"Unexpected label: {label}")
 
@@ -104,6 +108,14 @@ def get_cfg_list_of_dict(
         "alpha": alpha,
         "s": s,
         "edgecolors": "red",
+        "facecolor": "None",
+        "linewidths": linewidths,
+    }
+    cfg_list_of_dict[1]["test_unknown_unknown"] = {
+        "marker": "x",
+        "alpha": alpha,
+        "s": s,
+        "edgecolors": "dimgray",
         "facecolor": "None",
         "linewidths": linewidths,
     }
