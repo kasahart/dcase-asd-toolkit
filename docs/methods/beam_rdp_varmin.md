@@ -8,11 +8,13 @@ does not implement NA-BEATs itself.
 The status of each important behavior is explicit:
 
 - **Paper-defined:** frozen Original BEATs embeddings, frequency-wise pooling,
-  BEAM matching, and variance-minimum score rescaling.
+  BEAM matching, exact scaled cosine distance, and variance-minimum score
+  rescaling with four neighbors throughout the backend comparison.
 - **Implementation choice:** RDP runs during extraction so standard NPZ files
   keep `[N,F,D]`, not the full `[N,L,D]` patch sequence.
-- **Reproduction assumption:** VarMin uses TrainAll leave-one-out calibration,
-  one alpha per band, and is applied before the frequency mean.
+- **Reproduction assumption:** VarMin uses TrainAll leave-one-out calibration;
+  BEAM estimates one alpha per band before the frequency mean, while AP-only
+  scoring estimates one scalar alpha on the complete clip vector.
 - **Engineering optimization:** query/reference and reference/reference distance
   calculations are chunked without changing the exact cosine definition.
 - **Non-goal:** this is embedding-space ASD, not waveform separation or physical
@@ -46,6 +48,19 @@ The frequency frontend saves `embed_freq` with shape `[B,F_p,D]` and a flattened
 `embed` with shape `[B,F_p*D]`. `patch_sequence` is emitted only when
 `emit_patch_sequence: true`; standard configurations keep it disabled to avoid
 large NPZ files.
+
+For the two AP-only rows, scoring remains clip-level rather than BEAM-based:
+
+```text
+Global AP -> global embed [N,D] -> exact cosine 1-NN + VarMin K=4
+Freq AP   -> flattened embed [N,F*D] -> exact cosine 1-NN + VarMin K=4
+```
+
+The flattened Freq AP vector is L2-normalized and compared as one vector. It is
+not reinterpreted as `F` independent memories. The implementation represents
+each 2-D embedding array internally as one singleton band `[N,1,D]`; this is an
+engineering adapter that reuses the tested VarMin math and does not enable BEAM
+for either AP-only row.
 
 ## Relative Deviation Pooling
 
@@ -93,14 +108,23 @@ used by existing ASDKit backends and defaults to `false` in reproduction configs
 ## Variance-minimum score rescaling
 
 The implementation follows [Matsumoto et al., DCASE 2025](https://dcase.community/documents/workshop2025/proceedings/DCASE2025Workshop_Matsumoto_12.pdf).
-For reference `i` and band `f`, `b[i,f]` is the mean cosine distance to the `K`
-nearest *other* references in the same band. The default is `K=4`. With fewer
-than `K+1` references, `min(K,R-1)` is used with a warning; fewer than two is an
-error.
+For reference `i` (and band `f` for BEAM), `b[i]` or `b[i,f]` is the mean cosine
+distance to the `K` nearest *other* references in the same memory. The canonical
+value is `K=4`. With fewer than `K+1` references, `min(K,R-1)` is used with a
+warning; fewer than two is an error.
+
+The combined NA-BEATs paper says variance-minimum rescaling with four neighbors
+is always used in its backend comparison, but does not restate the reference-set
+composition. The cited VarMin method defines `Xref` as all normal training
+samples and TrainAll as all normal training data from both source and target
+domains. The implementation therefore uses one shared source+target normal
+memory for AP-only and BEAM rows. This is an evidence-based reproduction
+interpretation of the cited method; it does not use ASDKit's historical separate
+source/target `Knn` memories.
 
 TrainAll calibration treats each normal training reference as validation and
 uses leave-one-out raw matching. With raw nearest-neighbor distance `d_zf` and
-the selected neighbor density `b_zf`, each band uses
+the selected neighbor density `b_zf`, each BEAM band uses
 
 ```text
 alpha[f] = Cov(d_zf, b_zf) / Var(b_zf).
@@ -123,6 +147,10 @@ and enters standard evaluate/table aggregation. `raw` is an ablation and
 are constructed in configurable query chunks. Reference-reference density
 computation is also chunked.
 
+The AP-only backend applies the identical equations once to the complete clip
+vector, producing one scalar alpha rather than one alpha per frequency band.
+Neither alpha, adjusted distances, nor final scores are clipped.
+
 Training anomaly-score output excludes every reference having the same `path`
 as the query. TrainAll alpha calibration always excludes the reference itself by
 index. If paths are unavailable, the backend logs a warning because query-time
@@ -143,13 +171,15 @@ Original BEATs comparisons are:
 ```bash
 bash raw_beats_beam_rdp4.sh dcase2026 global_ap
 bash raw_beats_beam_rdp4.sh dcase2026 freq_ap
-bash raw_beats_beam_rdp4.sh dcase2026 freq_ap_beam raw
-bash raw_beats_beam_rdp4.sh dcase2026 freq_rdp4_beam raw
-bash raw_beats_beam_rdp4.sh dcase2026 freq_rdp8_beam raw
+bash raw_beats_beam_rdp4.sh dcase2026 freq_ap_beam varmin4
+bash raw_beats_beam_rdp4.sh dcase2026 freq_rdp4_beam varmin4
+bash raw_beats_beam_rdp4.sh dcase2026 freq_rdp8_beam varmin4
 ```
 
-Replace `raw` with `varmin4` for a BEAM + VarMin comparison. DCASE 2023 remains
-available as a historical smoke test:
+`global_ap` and `freq_ap` always select `knn_varmin4`; they do not use the
+`beam_mode` argument. For the three BEAM rows, replace `varmin4` with `raw` only
+for a diagnostic no-rescaling ablation. DCASE 2023 remains available as a
+historical smoke test:
 
 ```bash
 bash raw_beats_beam_rdp4.sh dcase2023 freq_rdp4_beam varmin4
@@ -182,8 +212,8 @@ The paper reference targets are not unit-test constants:
 
 | configuration | reference score | local score | difference |
 |---|---:|---:|---:|
-| Global AP | 57.16 | 58.44* | +1.28 |
-| Freq AP | 57.94 | 60.26* | +2.32 |
+| Global AP | 57.16 | 57.158 | -0.002 |
+| Freq AP | 57.94 | 57.939 | -0.001 |
 | Freq AP + BEAM + VarMin | 60.28 | 60.283 | +0.003 |
 | Freq RDP(4) + BEAM + VarMin | 61.32 | 61.329 | +0.009 |
 | Freq RDP(8) + BEAM + VarMin | 62.02 | 62.015 | -0.005 |
@@ -193,18 +223,19 @@ machines from Zenodo record `19336329`, with `audio_channel=first`, original
 duration, batch size 1, evaluator mode not applicable to development labels, and
 checkpoint SHA-256
 `8d1b234032a9ccff353612dc6c20982346dc2968b205b79d97303eb5e77bfb34`.
-BEAM used shared source+target normal memory, exact scaled cosine, VarMin K=4,
-TrainAll leave-one-out calibration, and the per-band scope. Results are stored
-under `/tmp/dcase-asd-toolkit-reproduction-results` in the run environment.
+All rows used shared source+target normal memory, exact scaled cosine, VarMin
+K=4, and TrainAll leave-one-out calibration. BEAM rows used per-band alpha before
+the frequency mean; AP-only rows used one scalar alpha on the complete clip
+vector. Results are stored under `/tmp/dcase-asd-toolkit-reproduction-results`
+in the run environment.
 
-The starred AP-only rows use the first backend in ASDKit's existing `default`
-score configuration: cosine 1-NN with separate source and target memories. That
-backend protocol is not established as identical to the paper's AP-only rows,
-and is the leading explanation for their material difference. BEAM raw on the
-Freq AP embeddings scored 60.139; adding the canonical VarMin assumption produced
-the reported 60.283. Differences should be investigated rather than adjusted.
-Other likely causes include duration policy, preprocessing, T-F layout, RDP,
-self-match exclusion, VarMin calibration/scope, dataset revision, and evaluation
+The AP-only rows now use the same exact-cosine, shared-normal-memory, K=4,
+TrainAll VarMin policy as the three BEAM rows. Their previous ASDKit `default`
+backend scores were 58.44 and 60.26; the updated protocol produces 57.158 and
+57.939. BEAM raw on the Freq AP embeddings previously scored 60.139; adding the
+canonical VarMin assumption produced 60.283. Differences should be investigated
+rather than adjusted. Other likely causes include memory composition, duration
+policy, preprocessing, self-match exclusion, dataset revision, and evaluation
 definition. The roughly 70.24 `Fujimura_MERL_task2_3` full-system result is not a
 target for this stack.
 
@@ -215,6 +246,8 @@ target for this stack.
 3. VarMin is applied to band scores before the frequency mean.
 4. RDP is applied over time independently per frequency after T-F restoration.
 5. RDP runs in extraction for ASDKit NPZ memory efficiency.
+6. For AP-only rows, the shared source+target normal reference set follows the
+   cited VarMin method because the combined paper does not restate `Xref`.
 
 ## Current non-goals and limits
 

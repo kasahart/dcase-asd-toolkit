@@ -15,11 +15,11 @@ extract_overrides=()
 case "${ablation}" in
     global_ap)
         experiments_extract="scratch/raw_beats"
-        experiments_score="default"
+        experiments_score="knn_varmin4"
         ;;
     freq_ap)
         experiments_extract="scratch/raw_beats_freq_ap"
-        experiments_score="default"
+        experiments_score="knn_varmin4"
         ;;
     freq_ap_beam)
         experiments_extract="scratch/raw_beats_freq_ap"
