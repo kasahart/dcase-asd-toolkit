@@ -20,10 +20,12 @@ def sequence_to_time_frequency(
     if time_patches <= 0 or frequency_patches <= 0:
         raise ValueError(f"grid dimensions must be positive, but got {grid_shape}")
     expected_length = time_patches * frequency_patches
-    assert x_seq.shape[1] == expected_length, (
-        "Patch sequence length does not match its grid: "
-        f"L={x_seq.shape[1]}, T_p={time_patches}, F_p={frequency_patches}"
-    )
+    if x_seq.shape[1] != expected_length:
+        raise ValueError(
+            "Patch sequence length does not match its grid: "
+            f"L={x_seq.shape[1]}, T_p={time_patches}, "
+            f"F_p={frequency_patches}, expected_length={expected_length}"
+        )
     return x_seq.reshape(
         x_seq.shape[0], time_patches, frequency_patches, x_seq.shape[2]
     )

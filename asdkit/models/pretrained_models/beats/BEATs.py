@@ -171,6 +171,12 @@ class BEATs(nn.Module):
             return_grid_shape: bool = False,
     ):
 
+        if return_grid_shape and self.predictor is not None:
+            raise ValueError(
+                "extract_features_with_grid() requires a sequence-output BEATs "
+                "checkpoint; the loaded model has a finetuned predictor"
+            )
+
         if padding_mask is not None:
             padding_mask = self.forward_padding_mask(fbank, padding_mask)
 

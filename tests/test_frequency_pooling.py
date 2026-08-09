@@ -74,5 +74,11 @@ def test_time_frequency_reshape_preserves_flatten_order():
 
 
 def test_time_frequency_reshape_checks_length():
-    with pytest.raises(AssertionError, match="does not match"):
+    with pytest.raises(ValueError) as error:
         sequence_to_time_frequency(torch.ones(1, 11, 3), (3, 4))
+
+    message = str(error.value)
+    assert "L=11" in message
+    assert "T_p=3" in message
+    assert "F_p=4" in message
+    assert "expected_length=12" in message
