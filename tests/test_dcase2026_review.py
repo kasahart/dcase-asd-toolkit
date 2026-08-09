@@ -1,12 +1,15 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
 import torch
+from omegaconf import OmegaConf
 
 from asdkit.bin import table
 from asdkit.datasets import torch_dataset
+from asdkit.datasets.collators import DCASEWaveCollator
 from asdkit.frontends.auroc import AUROC
 from asdkit.utils.asdkit_utils.extract import restore_dataset_args
 from asdkit.utils.asdkit_utils.visualize.plot import get_cfg_list_of_dict, get_u_idx
@@ -42,7 +45,32 @@ def test_dcase2026_table_uses_single_section_metrics(tmp_path, monkeypatch):
     assert result.loc[0, "machine"] == pytest.approx(0.75)
 
 
-def test_restore_dataset_args_uses_training_audio_channel():
+@pytest.mark.parametrize("audio_channel", ["first", "second", "mean", "diff"])
+def test_train_and_validation_audio_channels_are_aligned(audio_channel):
+    config_path = (
+        Path(__file__).parents[1] / "config/train/datamodule/audiofeat.yaml"
+    )
+    cfg = OmegaConf.create({"datamodule": OmegaConf.load(config_path)})
+
+    cfg.datamodule.train.dataset.audio_channel = audio_channel
+
+    assert cfg.datamodule.valid.dataset.audio_channel == audio_channel
+
+
+@pytest.mark.parametrize("audio_channel", ["first", "second", "mean", "diff"])
+def test_extraction_audio_channels_are_aligned(audio_channel):
+    config_path = (
+        Path(__file__).parents[1] / "config/extract/datamodule/default.yaml"
+    )
+    cfg = OmegaConf.create({"datamodule": OmegaConf.load(config_path)})
+
+    cfg.datamodule.train.dataset.audio_channel = audio_channel
+
+    assert cfg.datamodule.test.dataset.audio_channel == audio_channel
+
+
+@pytest.mark.parametrize("audio_channel", ["first", "second", "mean", "diff"])
+def test_restore_dataset_args_uses_training_audio_channel(audio_channel):
     cfg = SimpleNamespace(
         datamodule=SimpleNamespace(
             train=SimpleNamespace(dataset={"audio_channel": "first"}),
@@ -51,14 +79,27 @@ def test_restore_dataset_args_uses_training_audio_channel():
     )
     past_cfg = SimpleNamespace(
         datamodule=SimpleNamespace(
-            train=SimpleNamespace(dataset={"audio_channel": "second"})
+            train=SimpleNamespace(dataset={"audio_channel": audio_channel})
         )
     )
 
     restore_dataset_args(cfg, past_cfg)
 
-    assert cfg.datamodule.train.dataset["audio_channel"] == "second"
-    assert cfg.datamodule.test.dataset["audio_channel"] == "second"
+    assert cfg.datamodule.train.dataset["audio_channel"] == audio_channel
+    assert cfg.datamodule.test.dataset["audio_channel"] == audio_channel
+
+
+@pytest.mark.parametrize("duration_sec", [6, 10, 12, 16])
+def test_sec_all_preserves_original_waveform(duration_sec):
+    collator = DCASEWaveCollator(
+        label_dict_path={}, sec="all", sr=16000, shuffle=False
+    )
+    wave = torch.arange(duration_sec * 16000, dtype=torch.float32)
+
+    output = collator.crop_wave(wave)
+
+    assert output.data_ptr() == wave.data_ptr()
+    torch.testing.assert_close(output, wave)
 
 
 def test_unknown_evaluation_samples_are_visualized():
