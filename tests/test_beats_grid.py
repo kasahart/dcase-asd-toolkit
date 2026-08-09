@@ -1,3 +1,4 @@
+import pytest
 import torch
 from torch import nn
 
@@ -55,3 +56,13 @@ def test_existing_fbank_api_return_shape_is_unchanged():
     assert isinstance(output, tuple)
     assert len(output) == 2
     assert output[0].shape == (2, 6, 4)
+
+
+def test_grid_api_rejects_finetuned_predictor_without_patch_execution():
+    model = _tiny_beats()
+    model.predictor = nn.Linear(4, 3)
+
+    with pytest.raises(ValueError, match="sequence-output BEATs"):
+        model.extract_features_with_grid(torch.zeros(2, 6, 4))
+
+    assert model.patch_embedding.calls == 0
