@@ -1,7 +1,7 @@
 data_dir=$1
 dcase=$2
 
-if [ -d "${data_dir}/original/${dcase}" ]; then
+if [ "${dcase}" != "dcase2026" ] && [ -d "${data_dir}/original/${dcase}" ]; then
   echo "Data already exists. Exiting..."
   exit 1
 fi

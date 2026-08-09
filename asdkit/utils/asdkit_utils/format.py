@@ -55,16 +55,29 @@ def check_src_dir(src_dir: Path, dcase: str):
 class RenameTestPath:
     """Rename wav_path to a unified format and append ground-truth normal/anomaly label."""
 
-    def __init__(self, dcase: str, eval_ground_truth_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        dcase: str,
+        evaluation_ground_truth_mode: str = "hidden",
+        eval_ground_truth_dir: Optional[Path] = None,
+    ):
         # data/original/dcase2024/dev_data/raw/bearing/test/hoge.wav
         self.dcase = dcase
+        self.evaluation_ground_truth_mode = evaluation_ground_truth_mode
         self.path_dict = defaultdict(dict)  # type: ignore
         if self.dcase == "dcase2026":
+            if evaluation_ground_truth_mode not in ["hidden", "public"]:
+                raise ValueError(
+                    "evaluation_ground_truth_mode must be 'hidden' or 'public', "
+                    f"got {evaluation_ground_truth_mode!r}"
+                )
+            if evaluation_ground_truth_mode == "hidden":
+                return
             if eval_ground_truth_dir is None:
                 raise ValueError(
                     "eval_ground_truth_dir is required to format the DCASE 2026 "
-                    "evaluation data. Download the official DCASE 2026 Task 2 "
-                    "evaluator first."
+                    "evaluation data in public mode. Download the pinned official "
+                    "DCASE 2026 Task 2 evaluator first."
                 )
             self._load_dcase2026_ground_truth(eval_ground_truth_dir)
             return
@@ -94,6 +107,7 @@ class RenameTestPath:
                     f"DCASE 2026 ground truth file does not exist: {csv_path}"
                 )
 
+            labeled_names = set()
             with csv_path.open(newline="") as f:
                 for line_no, row in enumerate(csv.reader(f), start=1):
                     if len(row) != 2:
@@ -101,6 +115,11 @@ class RenameTestPath:
                             f"Expected two columns in {csv_path}:{line_no}, got {row}"
                         )
                     original_name, labeled_stem = row
+                    if not original_name.endswith(".wav"):
+                        raise ValueError(
+                            f"Invalid anonymous filename in {csv_path}:{line_no}: "
+                            f"{original_name}"
+                        )
                     labeled_name = (
                         labeled_stem
                         if labeled_stem.endswith(".wav")
@@ -121,6 +140,12 @@ class RenameTestPath:
                             f"Duplicate filename in {csv_path}:{line_no}: "
                             f"{original_name}"
                         )
+                    if labeled_name in labeled_names:
+                        raise ValueError(
+                            f"Duplicate labeled filename in {csv_path}:{line_no}: "
+                            f"{labeled_name}"
+                        )
+                    labeled_names.add(labeled_name)
                     self.path_dict[machine][original_name] = labeled_name
 
     def postprocess(self, wav_path: Path) -> Path:
@@ -171,6 +196,9 @@ class RenameTestPath:
             raise ValueError(f"Unknown split_de: {split_de}.")
 
         # path is in eval_data/test
+        if self.dcase == "dcase2026" and self.evaluation_ground_truth_mode == "hidden":
+            return self.postprocess(wav_path)
+
         machine = wav_path.parents[1].name
         try:
             renamed_name = self.path_dict[machine][wav_path.name]

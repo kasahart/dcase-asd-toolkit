@@ -14,7 +14,12 @@ from asdkit.utils.dcase_utils import MACHINE_DICT
 logger = logging.getLogger(__name__)
 
 
-def main(dcase: str, data_dir: str, link_mode: str) -> None:
+def main(
+    dcase: str,
+    data_dir: str,
+    link_mode: str,
+    evaluation_ground_truth_mode: str = "hidden",
+) -> None:
     src_dir = Path(data_dir) / "original" / dcase
     check_src_dir(src_dir=src_dir, dcase=dcase)
     dst_dir = Path(data_dir) / "formatted" / dcase
@@ -25,7 +30,11 @@ def main(dcase: str, data_dir: str, link_mode: str) -> None:
     eval_ground_truth_dir = None
     if dcase == "dcase2026":
         eval_ground_truth_dir = src_dir / "evaluator/ground_truth_attributes"
-    renamer = RenameTestPath(dcase=dcase, eval_ground_truth_dir=eval_ground_truth_dir)
+    renamer = RenameTestPath(
+        dcase=dcase,
+        evaluation_ground_truth_mode=evaluation_ground_truth_mode,
+        eval_ground_truth_dir=eval_ground_truth_dir,
+    )
     for split_de in ["dev", "eval"]:
         for machine in tqdm.tqdm(MACHINE_DICT[f"{dcase}-{split_de}"]):  # type: ignore
             for split_tt_dst, split_tt_src_list in traintest_dir_dict.items():
@@ -54,6 +63,15 @@ if __name__ == "__main__":
     args.add_argument("--data_dir", type=str)
     args.add_argument("--dcase", type=str)
     args.add_argument(
+        "--evaluation_ground_truth_mode",
+        choices=["hidden", "public"],
+        default="hidden",
+        help=(
+            "DCASE 2026 evaluation labels: keep anonymous names (hidden) or "
+            "apply the released official mapping (public)."
+        ),
+    )
+    args.add_argument(
         "--link_mode",
         type=str,
         choices=["symlink", "mv"],
@@ -61,4 +79,9 @@ if __name__ == "__main__":
         help="How to arrange files: use symbolic links or move the actual files.",
     )
     args = args.parse_args()
-    main(dcase=args.dcase, data_dir=args.data_dir, link_mode=args.link_mode)
+    main(
+        dcase=args.dcase,
+        data_dir=args.data_dir,
+        link_mode=args.link_mode,
+        evaluation_ground_truth_mode=args.evaluation_ground_truth_mode,
+    )

@@ -1,10 +1,15 @@
 data_dir="../../../data" # relative path from this script or absolute path
 dcase="dcase2025"
 link_mode="symlink" # or "mv"
+evaluation_ground_truth_mode="hidden" # DCASE 2026: "hidden" or "public"
 
 absolute_data_dir=$(cd "$(dirname ${data_dir})" && pwd)/$(basename ${data_dir})
 echo "absolute data_dir: ${absolute_data_dir}"
 
 cd ../..
 source venv/bin/activate
-python -m asdkit.bin.format --data_dir="${absolute_data_dir}" --dcase="${dcase}" --link_mode="${link_mode}"
+python -m asdkit.bin.format \
+  --data_dir="${absolute_data_dir}" \
+  --dcase="${dcase}" \
+  --link_mode="${link_mode}" \
+  --evaluation_ground_truth_mode="${evaluation_ground_truth_mode}"

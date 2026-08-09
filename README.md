@@ -32,7 +32,7 @@ ASDKit provides recipes for various ASD methods and supports evaluation on the D
 - Specify both `data_dir` and `dcase` in `jobs/download/run.sh`.
 - `data_dir`: The directory where the dataset will be stored. By default, it is set to the parent directory of this repository. If you change this, make sure to update `data_dir` in the other scripts accordingly.
 - `dcase`: The name of the dataset. Available options are: `dcase2021`, `dcase2022`, `dcase2023`, `dcase2024`, `dcase2025`, and `dcase2026`.
-- For DCASE 2026 Task 2, the download script uses the updated ToyCar archive `dev_ToyCar_r2.zip` and downloads the development, additional training, evaluation test data, and the official post-challenge evaluation labels/evaluator.
+- For DCASE 2026 Task 2, the download script uses the updated ToyCar archive `dev_ToyCar_r2.zip` and downloads the development, additional training, evaluation test data, and the official post-challenge evaluator pinned to commit `f6a94a2b5e614a9626c9d1ccff6df0705e6aaa75`. The downloader is safe to rerun to add or repair only the evaluator after audio archives have already been extracted.
 
 ```bash
 [dcase-asd-toolkit]$ cd jobs/download
@@ -54,12 +54,12 @@ ASDKit provides recipes for various ASD methods and supports evaluation on the D
 
 This process creates a formatted dataset in which the filename format and dataset structure are unified across all DCASE versions.  
 Additionally, it assigns ground-truth normal/anomalous labels to the test data. These labels are concealed during the challenge and released by the organizers afterward.
-For DCASE 2026, formatting reads the official filename correspondence tables downloaded to `original/dcase2026/evaluator/ground_truth_attributes` and assigns the released normal/anomaly and source/target labels to evaluation clips.
+For DCASE 2026, set `evaluation_ground_truth_mode` in `jobs/format/run.sh`. The default `hidden` mode preserves anonymous evaluation filenames, so `is_normal` and `is_target` remain `-1` and submission-style inference needs no evaluator. The `public` mode reads the released correspondence tables from `original/dcase2026/evaluator/ground_truth_attributes`, restores normal/anomaly, source/target, and filename attributes, and enables post-challenge evaluation. Public mode fails clearly if the pinned evaluator mapping is unavailable; the mode is never inferred from whether that directory happens to exist.
 
 
 **How to**
 
-- Specify `data_dir`, `dcase`, and `link_mode` in `jobs/format/run.sh`.
+- Specify `data_dir`, `dcase`, `link_mode`, and (for DCASE 2026) `evaluation_ground_truth_mode` in `jobs/format/run.sh`.
 - `link_mode`:  
     - If set `link_mode` to `symlink`, symbolic links with formatted filenames will be created. This mode does not modify the original files.  
     - If set to `link_mode` to `mv`, the original files will be directly renamed using the formatted filenames.

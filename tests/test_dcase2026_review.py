@@ -17,12 +17,18 @@ from asdkit.utils.asdkit_utils.visualize.plot import get_cfg_list_of_dict, get_u
 from asdkit.utils.dcase_utils import MACHINE_DICT, get_dcase_info
 
 
-def make_dcase2026_ground_truth(ground_truth_dir):
+def make_dcase2026_ground_truth(ground_truth_dir, rows=None):
     ground_truth_dir.mkdir()
+    if rows is None:
+        rows = [
+            (
+                "section_00_0000.wav",
+                "section_00_target_test_anomaly_0042_operating_state",
+            )
+        ]
     for machine in MACHINE_DICT["dcase2026-eval"]:
         (ground_truth_dir / f"ground_truth_{machine}_section_00_test.csv").write_text(
-            "section_00_0000.wav,"
-            "section_00_target_test_anomaly_0042_operating_state\n"
+            "".join(f"{original},{labeled}\n" for original, labeled in rows)
         )
 
 
@@ -134,20 +140,42 @@ def test_dcase2026_evaluation_ground_truth_is_applied(tmp_path):
         tmp_path / "original/dcase2026/eval_data/raw/ToyDrone/test/section_00_0000.wav"
     )
 
-    renamed_path = RenameTestPath("dcase2026", eval_ground_truth_dir=ground_truth_dir)(
-        wav_path
-    )
+    renamed_path = RenameTestPath(
+        "dcase2026",
+        evaluation_ground_truth_mode="public",
+        eval_ground_truth_dir=ground_truth_dir,
+    )(wav_path)
 
     assert renamed_path.name == (
         "section_00_target_test_anomaly_0042_operating_state.wav"
     )
     assert get_dcase_info(str(renamed_path), "is_normal") == 0
     assert get_dcase_info(str(renamed_path), "is_target") == 1
+    assert get_dcase_info(str(renamed_path), "attr") == "operating_state"
 
 
-def test_dcase2026_evaluation_ground_truth_is_required():
+def test_dcase2026_hidden_mode_preserves_anonymous_unknown_labels(tmp_path):
+    wav_path = (
+        tmp_path / "original/dcase2026/eval_data/raw/ToyDrone/test/section_00_0000.wav"
+    )
+
+    renamed_path = RenameTestPath(
+        "dcase2026", evaluation_ground_truth_mode="hidden"
+    )(wav_path)
+
+    assert renamed_path == wav_path
+    assert get_dcase_info(str(renamed_path), "is_normal") == -1
+    assert get_dcase_info(str(renamed_path), "is_target") == -1
+
+
+def test_dcase2026_public_ground_truth_is_required():
     with pytest.raises(ValueError, match="eval_ground_truth_dir is required"):
-        RenameTestPath("dcase2026")
+        RenameTestPath("dcase2026", evaluation_ground_truth_mode="public")
+
+
+def test_dcase2026_rejects_unknown_ground_truth_mode():
+    with pytest.raises(ValueError, match="must be 'hidden' or 'public'"):
+        RenameTestPath("dcase2026", evaluation_ground_truth_mode="automatic")
 
 
 def test_dcase2026_evaluation_ground_truth_must_cover_query(tmp_path):
@@ -158,4 +186,68 @@ def test_dcase2026_evaluation_ground_truth_must_cover_query(tmp_path):
     )
 
     with pytest.raises(KeyError, match="No evaluation ground truth mapping"):
-        RenameTestPath("dcase2026", eval_ground_truth_dir=ground_truth_dir)(wav_path)
+        RenameTestPath(
+            "dcase2026",
+            evaluation_ground_truth_mode="public",
+            eval_ground_truth_dir=ground_truth_dir,
+        )(wav_path)
+
+
+def test_dcase2026_ground_truth_rejects_duplicate_anonymous_names(tmp_path):
+    ground_truth_dir = tmp_path / "ground_truth_attributes"
+    make_dcase2026_ground_truth(
+        ground_truth_dir,
+        rows=[
+            ("section_00_0000.wav", "section_00_source_test_normal_0000_a"),
+            ("section_00_0000.wav", "section_00_target_test_anomaly_0001_b"),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="Duplicate filename"):
+        RenameTestPath(
+            "dcase2026",
+            evaluation_ground_truth_mode="public",
+            eval_ground_truth_dir=ground_truth_dir,
+        )
+
+
+def test_dcase2026_ground_truth_rejects_duplicate_labeled_names(tmp_path):
+    ground_truth_dir = tmp_path / "ground_truth_attributes"
+    make_dcase2026_ground_truth(
+        ground_truth_dir,
+        rows=[
+            ("section_00_0000.wav", "section_00_source_test_normal_0000_a"),
+            ("section_00_0001.wav", "section_00_source_test_normal_0000_a"),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="Duplicate labeled filename"):
+        RenameTestPath(
+            "dcase2026",
+            evaluation_ground_truth_mode="public",
+            eval_ground_truth_dir=ground_truth_dir,
+        )
+
+
+def test_dcase2026_ground_truth_accepts_1000_unique_rows(tmp_path):
+    ground_truth_dir = tmp_path / "ground_truth_attributes"
+    rows = [
+        (
+            f"section_00_{index:04d}.wav",
+            f"section_00_source_test_normal_{index:04d}_operating_state",
+        )
+        for index in range(200)
+    ]
+    make_dcase2026_ground_truth(ground_truth_dir, rows=rows)
+
+    renamer = RenameTestPath(
+        "dcase2026",
+        evaluation_ground_truth_mode="public",
+        eval_ground_truth_dir=ground_truth_dir,
+    )
+
+    assert sum(len(mapping) for mapping in renamer.path_dict.values()) == 1000
+    assert all(
+        len(mapping) == len(set(mapping.values())) == 200
+        for mapping in renamer.path_dict.values()
+    )
