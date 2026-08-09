@@ -9,6 +9,7 @@ from sklearn.neighbors import NearestNeighbors
 from asdkit.utils.common.np_util import normalize_vector
 
 from .base import BaseBackend
+from .beam import BEAMVarianceMin
 
 logger = logging.getLogger(__name__)
 
@@ -211,3 +212,74 @@ class KnnRescale(BaseBackend):
             scores[idx] = self.calc_score(embed[idx], self.ref_dict[sec])
 
         return {"main": scores}
+
+
+class KnnVarianceMin(BaseBackend):
+    """Clip-level exact-cosine 1-NN with variance-minimum rescaling.
+
+    The VarMin reference set is shared across source and target domains and
+    contains only normal training samples.  A clip embedding ``[N, D]`` is
+    represented internally as a single band ``[N, 1, D]`` so this backend can
+    reuse the same K-neighbor density, TrainAll leave-one-out calibration,
+    adjusted minimization, chunking, and path self-exclusion as BEAM without
+    treating flattened frequency embeddings as separate BEAM bands.
+    """
+
+    diagnostic_score_keys = BEAMVarianceMin.diagnostic_score_keys
+    _engine_embed_key = "__knn_varmin_single_band_embed"
+
+    def __init__(
+        self,
+        embed_key: str = "embed",
+        sep_section: bool = False,
+        rescale_k: int = 4,
+        rescale_validation: str = "train_all",
+        distance: str = "scaled_cosine",
+        rescaling: str = "variance_minimum",
+        chunk_size: int = 128,
+        eps: float = 1e-12,
+    ):
+        if distance != "scaled_cosine":
+            raise NotImplementedError(
+                f"distance={distance!r} is not implemented; use 'scaled_cosine'"
+            )
+        if rescaling != "variance_minimum":
+            raise NotImplementedError(
+                f"rescaling={rescaling!r} is not implemented; "
+                "use 'variance_minimum'"
+            )
+        self.embed_key = embed_key
+        self.distance = distance
+        self.rescaling = rescaling
+        self._engine = BEAMVarianceMin(
+            embed_key=self._engine_embed_key,
+            sep_section=sep_section,
+            use_rescaling=True,
+            rescale_k=rescale_k,
+            rescale_validation=rescale_validation,
+            rescale_scope="per_band",
+            chunk_size=chunk_size,
+            eps=eps,
+        )
+
+    def _as_single_band(self, extract_dict: dict) -> dict:
+        embeddings = np.asarray(extract_dict[self.embed_key])
+        if embeddings.ndim != 2:
+            raise ValueError(
+                f"{self.embed_key} must have shape [N, D], got {embeddings.shape}"
+            )
+        if not np.issubdtype(embeddings.dtype, np.floating):
+            raise TypeError(
+                f"{self.embed_key} must have a floating dtype, got {embeddings.dtype}"
+            )
+        if not np.isfinite(embeddings).all():
+            raise ValueError(f"{self.embed_key} contains NaN or Inf")
+        adapted = dict(extract_dict)
+        adapted[self._engine_embed_key] = embeddings[:, None, :]
+        return adapted
+
+    def fit(self, train_dict: dict) -> None:
+        self._engine.fit(self._as_single_band(train_dict))
+
+    def anomaly_score(self, test_dict: dict) -> Dict[str, np.ndarray]:
+        return self._engine.anomaly_score(self._as_single_band(test_dict))

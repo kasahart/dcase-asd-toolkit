@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from hydra import compose, initialize_config_dir
 
-from asdkit.backends import BEAMVarianceMin
+from asdkit.backends import BEAMVarianceMin, KnnVarianceMin
 from asdkit.bin.score import hydra_to_pydantic as score_hydra_to_pydantic
 from asdkit.utils.asdkit_utils.evaluate import get_as_name as get_evaluation_as_name
 from asdkit.utils.asdkit_utils.score import add_score
@@ -37,6 +37,21 @@ def test_score_configs_compose_and_backend_instantiates():
         backend = instantiate_tgt(cfg.backend[0])
         assert isinstance(backend, BEAMVarianceMin)
         assert backend.use_rescaling is expected_rescaling
+
+
+def test_knn_varmin_config_composes_and_instantiates():
+    config_dir = str(Path("config/score").resolve())
+    with initialize_config_dir(version_base=None, config_dir=config_dir):
+        hydra_cfg = compose(
+            config_name="main", overrides=_common_overrides("knn_varmin4")
+        )
+    cfg = score_hydra_to_pydantic(hydra_cfg)
+    backend = instantiate_tgt(cfg.backend[0])
+    assert isinstance(backend, KnnVarianceMin)
+    assert backend.distance == "scaled_cosine"
+    assert backend.rescaling == "variance_minimum"
+    assert backend._engine.rescaler.k == 4
+    assert backend._engine.rescaler.validation == "train_all"
 
 
 def test_score_pipeline_accepts_beam_outputs():
@@ -84,3 +99,45 @@ def test_score_pipeline_accepts_beam_outputs():
         all_score_columns = score_columns + diagnostic_columns
         assert result[split][all_score_columns].shape == (length, 3)
         assert np.isfinite(result[split][all_score_columns].to_numpy()).all()
+
+
+def test_score_pipeline_accepts_knn_varmin_outputs_as_one_canonical_score():
+    rng = np.random.default_rng(29)
+    train = {
+        "embed": rng.normal(size=(6, 5)).astype(np.float32),
+        "path": np.array([f"train-{i}" for i in range(6)]),
+        "section": np.zeros(6, dtype=np.int64),
+        "is_normal": np.ones(6, dtype=np.int64),
+        "is_target": np.array([0, 0, 0, 0, 0, 1]),
+    }
+    test = {
+        "embed": rng.normal(size=(3, 5)).astype(np.float32),
+        "path": np.array([f"test-{i}" for i in range(3)]),
+        "section": np.zeros(3, dtype=np.int64),
+        "is_normal": np.zeros(3, dtype=np.int64),
+        "is_target": np.array([0, 1, 1]),
+    }
+    frames = {
+        "train": pd.DataFrame({"path": train["path"]}),
+        "test": pd.DataFrame({"path": test["path"]}),
+    }
+    result = add_score(
+        backend_cfg={
+            "tgt_class": "asdkit.backends.KnnVarianceMin",
+            "rescale_k": 4,
+            "chunk_size": 2,
+        },
+        extract_dict_dict={"train": train, "test": test},
+        score_df_dict=frames,
+    )
+    for split in ["train", "test"]:
+        canonical = [column for column in result[split] if column.startswith("AS-")]
+        diagnostic = [
+            column
+            for column in result[split]
+            if column.startswith("diagnostic-")
+        ]
+        assert len(canonical) == 1
+        assert canonical[0].endswith("-main")
+        assert len(diagnostic) == 2
+        assert get_evaluation_as_name(result[split]) == canonical

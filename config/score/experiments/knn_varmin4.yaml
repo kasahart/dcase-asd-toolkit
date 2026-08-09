@@ -1,0 +1,12 @@
+# @package _global_
+backend:
+  - tgt_class: asdkit.backends.KnnVarianceMin
+    embed_key: embed
+    sep_section: false
+    # Paper protocol: exact 0.5 * (1 - cosine), shared source+target normal
+    # memory, K=4 local density, and TrainAll leave-one-out calibration.
+    distance: scaled_cosine
+    rescaling: variance_minimum
+    rescale_k: 4
+    rescale_validation: train_all
+    chunk_size: 128
