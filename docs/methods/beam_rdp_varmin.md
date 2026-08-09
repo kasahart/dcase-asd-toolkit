@@ -5,6 +5,19 @@ step toward the NA-BEATs pipeline described in [Anomalous Sound Detection Meets
 Noise-Aware Self-Supervised Learning](https://arxiv.org/html/2608.00447v1). It
 does not implement NA-BEATs itself.
 
+The status of each important behavior is explicit:
+
+- **Paper-defined:** frozen Original BEATs embeddings, frequency-wise pooling,
+  BEAM matching, and variance-minimum score rescaling.
+- **Implementation choice:** RDP runs during extraction so standard NPZ files
+  keep `[N,F,D]`, not the full `[N,L,D]` patch sequence.
+- **Reproduction assumption:** VarMin uses TrainAll leave-one-out calibration,
+  one alpha per band, and is applied before the frequency mean.
+- **Engineering optimization:** query/reference and reference/reference distance
+  calculations are chunked without changing the exact cosine definition.
+- **Non-goal:** this is embedding-space ASD, not waveform separation or physical
+  sound-level measurement.
+
 ## Pipeline and tensor shapes
 
 The standard pipeline is:
@@ -20,10 +33,14 @@ waveform [B, samples]
   -> uniform mean over F_p -> sample anomaly score [B]
 ```
 
-`T_p` and `F_p` come from the actual BEATs patch convolution output; neither the
-audio duration nor `F_p` is hard-coded. BEATs flattens the convolution output in
-row-major `(time, frequency)` order, so `[B,L,D]` is restored directly as
-`[B,T_p,F_p,D]` after checking `L == T_p * F_p`.
+`T_p` and `F_p` come from the actual BEATs patch convolution output; `F_p` is not
+hard-coded by the frontend. BEATs flattens the convolution output in row-major
+`(time, frequency)` order, so `[B,L,D]` is restored directly as
+`[B,T_p,F_p,D]` after checking `L == T_p * F_p`. Duration is a pipeline setting:
+the canonical DCASE 2026 recipe explicitly uses `sec=all` and batch size 1 for
+both train and test extraction, while historical recipes retain their existing
+fixed-duration `${dcase}` behavior. A fixed-duration DCASE 2026 experiment is
+still possible only through an explicit Hydra override.
 
 The frequency frontend saves `embed_freq` with shape `[B,F_p,D]` and a flattened
 `embed` with shape `[B,F_p*D]`. `patch_sequence` is emitted only when
@@ -100,9 +117,11 @@ S_main          = mean_f s_rescaled_f(x).
 
 Thus the adjusted neighbor may differ from the raw nearest neighbor, and final
 scores may be negative. The backend returns one-dimensional `main`, `raw`, and
-`rescale_delta = raw - main` arrays. Distance matrices are constructed in
-configurable query chunks. Reference-reference density computation is also
-chunked.
+`rescale_delta = raw - main` arrays. Only `main` uses the canonical `AS-` prefix
+and enters standard evaluate/table aggregation. `raw` is an ablation and
+`rescale_delta` is diagnostic; both use a `diagnostic-` prefix. Distance matrices
+are constructed in configurable query chunks. Reference-reference density
+computation is also chunked.
 
 Training anomaly-score output excludes every reference having the same `path`
 as the query. TrainAll alpha calibration always excludes the reference itself by
@@ -111,33 +130,83 @@ self-match exclusion cannot be guaranteed.
 
 ## Configuration and execution
 
-Frequency AP and RDP extraction use, respectively:
-
-```bash
-python -m asdkit.bin.extract dcase=dcase2023 name=recipe \
-  version=raw_beats_freq_ap seed=0 infer_ver=last machine=bearing \
-  experiments=scratch/raw_beats_freq_ap
-
-python -m asdkit.bin.extract dcase=dcase2023 name=recipe \
-  version=raw_beats_freq_rdp4 seed=0 infer_ver=last machine=bearing \
-  experiments=scratch/raw_beats_freq_rdp4
-```
-
-Select `experiments=beam_raw` or `experiments=beam_varmin4` when running
-`asdkit.bin.score`. The complete RDP(4) recipe is:
+The entrypoint defaults to the canonical DCASE 2026 RDP(4) + BEAM + VarMin run:
 
 ```bash
 cd jobs/asd/call
 bash raw_beats_beam_rdp4.sh
 ```
 
-To compare the Original BEATs stages reported in the NA-BEATs paper, extract the
-same data with the existing global `raw_beats`, frequency AP, RDP(4), and an
-RDP(8) override, then pair frequency embeddings with raw BEAM or VarMin BEAM.
-The published DCASE 2026 development reference scores (with its experimental
-setup) are 60.28 for Freq AP + BEAM, 61.32 for RDP(4) + BEAM, and 62.02 for
-RDP(8) + BEAM. Exact agreement is not claimed without the paper's complete data
-and evaluation setup.
+Its positional arguments are `dcase`, `ablation`, and `beam_mode`. The five
+Original BEATs comparisons are:
+
+```bash
+bash raw_beats_beam_rdp4.sh dcase2026 global_ap
+bash raw_beats_beam_rdp4.sh dcase2026 freq_ap
+bash raw_beats_beam_rdp4.sh dcase2026 freq_ap_beam raw
+bash raw_beats_beam_rdp4.sh dcase2026 freq_rdp4_beam raw
+bash raw_beats_beam_rdp4.sh dcase2026 freq_rdp8_beam raw
+```
+
+Replace `raw` with `varmin4` for a BEAM + VarMin comparison. DCASE 2023 remains
+available as a historical smoke test:
+
+```bash
+bash raw_beats_beam_rdp4.sh dcase2023 freq_rdp4_beam varmin4
+```
+
+For DCASE 2026 every variant receives these extraction overrides:
+
+```text
+datamodule.train.collator.sec=all
+datamodule.train.dataloader.batch_size=1
+```
+
+The test loader inherits both settings. The configured audio channel is `first`
+for training, validation, and restored extraction (the near channel in the
+DCASE 2026 two-channel recordings); `second`, `mean`, and `diff` remain explicit
+experiment overrides. Formatting is a separate prerequisite: use `hidden` for
+anonymous submission-style inference or `public` for post-challenge metrics.
+
+## Reproduction record
+
+The downloader identifies its dataset inputs by Zenodo records `19336329`
+(development, including `dev_ToyCar_r2.zip`), `20151556` (additional evaluation
+machine training audio), and `20437238` (evaluation test audio). Public labels
+come from evaluator commit
+`f6a94a2b5e614a9626c9d1ccff6df0705e6aaa75`. The model checkpoint is the
+Original `pretrained_models/beats/BEATs_iter3.pt`; record its local checksum when
+reporting an experiment.
+
+The paper reference targets are not unit-test constants:
+
+| configuration | reference score | local score | difference |
+|---|---:|---:|---:|
+| Global AP | 57.16 | 58.44* | +1.28 |
+| Freq AP | 57.94 | 60.26* | +2.32 |
+| Freq AP + BEAM + VarMin | 60.28 | 60.283 | +0.003 |
+| Freq RDP(4) + BEAM + VarMin | 61.32 | 61.329 | +0.009 |
+| Freq RDP(8) + BEAM + VarMin | 62.02 | 62.015 | -0.005 |
+
+These local scores were run on 2026-08-09 over the seven DCASE 2026 development
+machines from Zenodo record `19336329`, with `audio_channel=first`, original
+duration, batch size 1, evaluator mode not applicable to development labels, and
+checkpoint SHA-256
+`8d1b234032a9ccff353612dc6c20982346dc2968b205b79d97303eb5e77bfb34`.
+BEAM used shared source+target normal memory, exact scaled cosine, VarMin K=4,
+TrainAll leave-one-out calibration, and the per-band scope. Results are stored
+under `/tmp/dcase-asd-toolkit-reproduction-results` in the run environment.
+
+The starred AP-only rows use the first backend in ASDKit's existing `default`
+score configuration: cosine 1-NN with separate source and target memories. That
+backend protocol is not established as identical to the paper's AP-only rows,
+and is the leading explanation for their material difference. BEAM raw on the
+Freq AP embeddings scored 60.139; adding the canonical VarMin assumption produced
+the reported 60.283. Differences should be investigated rather than adjusted.
+Other likely causes include duration policy, preprocessing, T-F layout, RDP,
+self-match exclusion, VarMin calibration/scope, dataset revision, and evaluation
+definition. The roughly 70.24 `Fujimura_MERL_task2_3` full-system result is not a
+target for this stack.
 
 ## Explicit assumptions where the combined paper is underspecified
 
@@ -149,7 +218,9 @@ and evaluation setup.
 
 ## Current non-goals and limits
 
-NA-BEATs/Dis NA-BEATs layers and training, two-channel DCASE 2026 input changes,
-LoRA changes, pseudo-labeling, dataset formatting, evaluation metrics, waveform
-denoising, clean-waveform generation, and calibrated pressure/SPL output are not
-implemented. This backend only computes anomaly scores in embedding space.
+NA-BEATs and Dis NA-BEATs, discriminative fine-tuning, LoRA, pseudo-labeling,
+waveform noise cancellation, clean-waveform generation, anomalous-waveform
+separation, RMS `[Pa]`, SPL/calibration, and guaranteed inspection thresholds are
+not implemented. Dataset formatting and DCASE metrics exist elsewhere in ASDKit,
+but this method remains an embedding-space anomaly detector and does not claim
+any source-separation or physical-magnitude result.
