@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -78,20 +79,53 @@ def test_frequency_frontend_rejects_unknown_pooling():
 
 
 def test_actual_beats_iter3_frequency_shape_when_checkpoint_exists():
-    checkpoint = Path("pretrained_models/beats/BEATs_iter3.pt")
+    checkpoint = Path(
+        os.environ.get(
+            "BEATS_ITER3_CHECKPOINT", "pretrained_models/beats/BEATs_iter3.pt"
+        )
+    )
     if not checkpoint.exists():
-        pytest.skip("BEATs_iter3 checkpoint is not available locally")
+        pytest.skip(
+            "BEATs_iter3 checkpoint is not available locally; set "
+            "BEATS_ITER3_CHECKPOINT to an existing file"
+        )
     frontend = BEATsFrequencyPoolingFrozenModel(
         model_cfg={"ckpt_path": str(checkpoint)},
         pooling="mean",
         emit_patch_sequence=False,
     )
-    batch = {"wave": torch.zeros(1, 16000)}
-    mean_output = frontend.extract(batch)
-    frontend.pooling = "rdp"
-    rdp_output = frontend.extract(batch)
-    assert mean_output["embed_freq"].ndim == 3
-    assert mean_output["embed_freq"].shape[1:] == (8, 768)
-    assert mean_output["embed"].shape == (1, 8 * 768)
-    assert rdp_output["embed_freq"].shape == (1, 8, 768)
-    assert "patch_sequence" not in mean_output
+    frontend.model.eval()
+
+    original_extract = frontend.model.extract_features_with_grid
+    observed_grid_shapes = []
+
+    def extract_and_record_grid(*args, **kwargs):
+        result = original_extract(*args, **kwargs)
+        observed_grid_shapes.append(result[2])
+        return result
+
+    frontend.model.extract_features_with_grid = extract_and_record_grid
+    time_patches = {}
+    with torch.no_grad():
+        for duration_sec in [6, 10, 12, 16]:
+            batch = {"wave": torch.zeros(1, duration_sec * 16000)}
+            duration_grids = []
+            for pooling, gamma in [("mean", 4), ("rdp", 4), ("rdp", 8)]:
+                frontend.pooling = pooling
+                frontend.gamma = gamma
+                output = frontend.extract(batch)
+                duration_grids.append(observed_grid_shapes[-1])
+
+                assert output["embed_freq"].ndim == 3
+                assert output["embed_freq"].shape == (1, 8, 768)
+                assert output["embed"].shape == (1, 8 * 768)
+                assert torch.isfinite(output["embed_freq"]).all()
+                assert torch.isfinite(output["embed"]).all()
+                assert "patch_sequence" not in output
+
+            assert len(set(duration_grids)) == 1
+            time_patches[duration_sec] = duration_grids[0][0]
+            assert duration_grids[0][1] == 8
+
+    assert list(time_patches.values()) == sorted(time_patches.values())
+    assert len(set(time_patches.values())) == 4
