@@ -43,8 +43,10 @@ def add_score(
     backend: BaseBackend = instantiate_tgt(backend_cfg)
     backend.fit(extract_dict_dict["train"])
     backend_name = get_as_name(backend_cfg)
+    diagnostic_score_keys = getattr(backend, "diagnostic_score_keys", set())
     for split in ["train", "test"]:
         anomaly_score_dict = backend.anomaly_score(extract_dict_dict[split])
         for key, score in anomaly_score_dict.items():
-            score_df_dict[split][f"AS-{backend_name}-{key}"] = score
+            prefix = "diagnostic" if key in diagnostic_score_keys else "AS"
+            score_df_dict[split][f"{prefix}-{backend_name}-{key}"] = score
     return score_df_dict

@@ -246,7 +246,17 @@ class _BandMemory:
 
 
 class BEAMVarianceMin(BaseBackend):
-    """BEAM backend with optional per-band variance-minimum score rescaling."""
+    """BEAM backend with optional per-band variance-minimum score rescaling.
+
+    The canonical reproduction assumes TrainAll leave-one-out calibration and a
+    separate alpha for each frequency band, applies rescaling before the uniform
+    frequency mean, and minimizes the adjusted distance over all references. The
+    available paper description does not fully disambiguate the per-band scope,
+    so this is an explicit reproduction assumption rather than a paper-guaranteed
+    detail.
+    """
+
+    diagnostic_score_keys = {"raw", "rescale_delta"}
 
     def __init__(
         self,
