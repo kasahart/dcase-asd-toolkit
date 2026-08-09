@@ -6,6 +6,7 @@ from hydra import compose, initialize_config_dir
 
 from asdkit.backends import BEAMVarianceMin
 from asdkit.bin.score import hydra_to_pydantic as score_hydra_to_pydantic
+from asdkit.utils.asdkit_utils.evaluate import get_as_name as get_evaluation_as_name
 from asdkit.utils.asdkit_utils.score import add_score
 from asdkit.utils.common.instantiate_util import instantiate_tgt
 
@@ -69,6 +70,17 @@ def test_score_pipeline_accepts_beam_outputs():
     )
     for split, length in [("train", 6), ("test", 3)]:
         score_columns = [column for column in result[split] if column.startswith("AS-")]
-        assert len(score_columns) == 3
-        assert result[split][score_columns].shape == (length, 3)
-        assert np.isfinite(result[split][score_columns].to_numpy()).all()
+        diagnostic_columns = [
+            column
+            for column in result[split]
+            if column.startswith("diagnostic-")
+        ]
+        assert len(score_columns) == 1
+        assert score_columns[0].endswith("-main")
+        assert len(diagnostic_columns) == 2
+        assert any(column.endswith("-raw") for column in diagnostic_columns)
+        assert any(column.endswith("-rescale_delta") for column in diagnostic_columns)
+        assert get_evaluation_as_name(result[split]) == score_columns
+        all_score_columns = score_columns + diagnostic_columns
+        assert result[split][all_score_columns].shape == (length, 3)
+        assert np.isfinite(result[split][all_score_columns].to_numpy()).all()

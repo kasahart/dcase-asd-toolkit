@@ -5,6 +5,8 @@ backend:
     sep_section: false
     use_rescaling: true
     rescale_k: 4
+    # Reproduction assumption: TrainAll LOO, per-band alpha, and rescaling before
+    # the uniform frequency mean; the paper does not fully disambiguate the scope.
     rescale_validation: train_all
     rescale_scope: per_band
     chunk_size: 128
