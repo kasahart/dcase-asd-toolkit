@@ -9,7 +9,7 @@
 
 
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -113,6 +113,22 @@ class BEATs(nn.Module):
         padding_mask = padding_mask.all(-1)
         return padding_mask
 
+    def forward_patch_padding_mask(
+            self,
+            padding_mask: torch.Tensor,
+            grid_shape: Tuple[int, int],
+    ) -> torch.Tensor:
+        time_patches, frequency_patches = grid_shape
+        extra = padding_mask.size(1) % time_patches
+        if extra > 0:
+            padding_mask = padding_mask[:, :-extra]
+        time_padding_mask = padding_mask.view(
+            padding_mask.size(0), time_patches, -1
+        ).all(-1)
+        return time_padding_mask.unsqueeze(-1).expand(
+            -1, -1, frequency_patches
+        ).reshape(padding_mask.size(0), time_patches * frequency_patches)
+
     def preprocess(
             self,
             source: torch.Tensor,
@@ -188,7 +204,9 @@ class BEATs(nn.Module):
         features = self.layer_norm(features)
 
         if padding_mask is not None:
-            padding_mask = self.forward_padding_mask(features, padding_mask)
+            padding_mask = self.forward_patch_padding_mask(
+                padding_mask, grid_shape
+            )
 
         if self.post_extract_proj is not None:
             features = self.post_extract_proj(features)

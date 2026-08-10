@@ -58,6 +58,31 @@ def test_existing_fbank_api_return_shape_is_unchanged():
     assert output[0].shape == (2, 6, 4)
 
 
+def test_patch_padding_mask_repeats_each_time_mask_across_frequency():
+    model = _tiny_beats()
+    padding_mask = torch.tensor(
+        [
+            [False, False, False, False, False, True],
+            [False, False, False, False, True, True],
+        ]
+    )
+
+    _, sequence_padding_mask, grid_shape = model.extract_features_with_grid(
+        torch.zeros(2, 6, 4), padding_mask=padding_mask
+    )
+
+    assert grid_shape == (3, 2)
+    torch.testing.assert_close(
+        sequence_padding_mask,
+        torch.tensor(
+            [
+                [False, False, False, False, False, False],
+                [False, False, False, False, True, True],
+            ]
+        ),
+    )
+
+
 def test_grid_api_rejects_finetuned_predictor_without_patch_execution():
     model = _tiny_beats()
     model.predictor = nn.Linear(4, 3)

@@ -98,7 +98,8 @@ def relative_deviation_pooling(
     x_compute = x_tf.to(dtype=compute_dtype)
     mask_value = mask.unsqueeze(-1).to(dtype=compute_dtype)
     valid_count = mask_value.sum(dim=1)
-    mean = (x_compute * mask_value).sum(dim=1) / valid_count
+    mean_weight = mask_value / valid_count.unsqueeze(1)
+    mean = (x_compute * mean_weight).sum(dim=1)
 
     distance = torch.linalg.vector_norm(x_compute - mean.unsqueeze(1), dim=-1)
     distance = distance.masked_fill(~mask, 0)
@@ -166,6 +167,5 @@ def frequency_pooling(
     )
     x_compute = x_tf.to(dtype=compute_dtype)
     mask_value = mask.unsqueeze(-1).to(dtype=compute_dtype)
-    return (
-        (x_compute * mask_value).sum(dim=1) / mask_value.sum(dim=1)
-    ).to(x_tf.dtype)
+    mean_weight = mask_value / mask_value.sum(dim=1).unsqueeze(1)
+    return (x_compute * mean_weight).sum(dim=1).to(x_tf.dtype)

@@ -82,6 +82,22 @@ def test_bfloat16_pooling_avoids_float32_range_overflow(mode):
     torch.testing.assert_close(pooled, x.detach()[:, 0])
 
 
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [(torch.float32, 2e38), (torch.float64, 1e308)],
+)
+@pytest.mark.parametrize("mode", ["mean", "rdp"])
+def test_full_precision_pooling_uses_overflow_safe_mean(dtype, value, mode):
+    x = torch.full((1, 2, 1, 1), value, dtype=dtype, requires_grad=True)
+
+    pooled = frequency_pooling(x, mode=mode, gamma=4)
+    pooled.sum().backward()
+
+    assert torch.isfinite(pooled).all()
+    assert torch.isfinite(x.grad).all()
+    torch.testing.assert_close(pooled, x.detach()[:, 0])
+
+
 def test_rdp_emphasizes_transient_patch():
     x = torch.tensor([0.0, 0.0, 0.0, 10.0]).reshape(1, 4, 1, 1)
     pooled, weights = relative_deviation_pooling(x, gamma=4, return_weights=True)
