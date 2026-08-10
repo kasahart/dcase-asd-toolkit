@@ -10,6 +10,20 @@ evaluator_url="https://github.com/nttcslab/dcase2026_task2_evaluator.git"
 mkdir -p "${dev_dir}"
 mkdir -p "${eval_dir}"
 
+download_archive() {
+  archive=$1
+  url=$2
+
+  if ! unzip -tq "${archive}" >/dev/null 2>&1; then
+    curl --fail --location --continue-at - --output "${archive}" "${url}"
+  fi
+  if ! unzip -tq "${archive}" >/dev/null 2>&1; then
+    echo "Incomplete or corrupt archive after download: ${archive}" >&2
+    return 1
+  fi
+  unzip -n "${archive}"
+}
+
 # Download development data.
 cd "${dev_dir}"
 for machine_type in \
@@ -21,10 +35,10 @@ for machine_type in \
     sliderEmu \
     valveEmu \
 ; do
-if [ ! -f "dev_${machine_type}.zip" ]; then
-  curl -L -C - -O "https://zenodo.org/records/19336329/files/dev_${machine_type}.zip"
-fi
-unzip -n "dev_${machine_type}.zip"
+archive="dev_${machine_type}.zip"
+download_archive \
+  "${archive}" \
+  "https://zenodo.org/records/19336329/files/${archive}"
 done
 
 # Download additional training data for the evaluation machines.
@@ -36,10 +50,10 @@ for machine_type in \
     ToothBrush \
     ToyDrone \
 ; do
-if [ ! -f "eval_data_${machine_type}_train.zip" ]; then
-  curl -L -C - -O "https://zenodo.org/records/20151556/files/eval_data_${machine_type}_train.zip"
-fi
-unzip -n "eval_data_${machine_type}_train.zip"
+archive="eval_data_${machine_type}_train.zip"
+download_archive \
+  "${archive}" \
+  "https://zenodo.org/records/20151556/files/${archive}"
 done
 
 # Download evaluation test data.
@@ -50,10 +64,10 @@ for machine_type in \
     ToothBrush \
     ToyDrone \
 ; do
-if [ ! -f "eval_data_${machine_type}_test.zip" ]; then
-  curl -L -C - -O "https://zenodo.org/records/20437238/files/eval_data_${machine_type}_test.zip"
-fi
-unzip -n "eval_data_${machine_type}_test.zip"
+archive="eval_data_${machine_type}_test.zip"
+download_archive \
+  "${archive}" \
+  "https://zenodo.org/records/20437238/files/${archive}"
 done
 
 # Download the official post-challenge evaluation labels and evaluator.
@@ -67,12 +81,21 @@ else
   git -C "${evaluator_dir}" remote set-url origin "${evaluator_url}"
 fi
 
+if [ -n "$(git -C "${evaluator_dir}" status --porcelain --untracked-files=all)" ]; then
+  echo "Evaluator directory has local changes; refusing to use or overwrite it: ${evaluator_dir}" >&2
+  exit 1
+fi
+
 git -C "${evaluator_dir}" fetch --depth 1 origin "${DCASE2026_EVALUATOR_REV}"
 git -C "${evaluator_dir}" checkout --detach FETCH_HEAD
 actual_evaluator_rev=$(git -C "${evaluator_dir}" rev-parse HEAD)
 echo "DCASE 2026 evaluator revision: ${actual_evaluator_rev}"
 if [ "${actual_evaluator_rev}" != "${DCASE2026_EVALUATOR_REV}" ]; then
   echo "Unexpected evaluator revision: ${actual_evaluator_rev}" >&2
+  exit 1
+fi
+if [ -n "$(git -C "${evaluator_dir}" status --porcelain --untracked-files=all)" ]; then
+  echo "Evaluator checkout is not clean: ${evaluator_dir}" >&2
   exit 1
 fi
 
