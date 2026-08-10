@@ -1,0 +1,11 @@
+# @package _global_
+# The single KNN used for the published frozen raw-BEATs baseline.  These
+# values intentionally match the KNN-with-SMOTE entry in ``default.yaml``.
+backend:
+  - tgt_class: asdkit.backends.Knn
+    n_neighbors_so: 1
+    n_neighbors_ta: 1
+    smote_ratio: 0.2
+    smote_neighbors: 2
+    random_state: ${seed}
+    metric: cosine

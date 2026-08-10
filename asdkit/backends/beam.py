@@ -266,6 +266,7 @@ class BEAMVarianceMin(BaseBackend):
         rescale_k: int = 4,
         rescale_validation: str = "train_all",
         rescale_scope: str = "per_band",
+        neighbor_mode: str = "per_band",
         chunk_size: int = 128,
         eps: float = 1e-12,
     ):
@@ -279,9 +280,15 @@ class BEAMVarianceMin(BaseBackend):
             )
         if not math.isfinite(eps) or eps <= 0:
             raise ValueError(f"eps must be finite and positive, got {eps}")
+        if neighbor_mode not in {"per_band", "coupled"}:
+            raise ValueError(
+                "neighbor_mode must be 'per_band' or 'coupled', "
+                f"got {neighbor_mode!r}"
+            )
         self.embed_key = embed_key
         self.sep_section = sep_section
         self.use_rescaling = use_rescaling
+        self.neighbor_mode = neighbor_mode
         self.chunk_size = chunk_size
         self.eps = eps
         self.rescaler = VarianceMinRescaler(
@@ -363,9 +370,9 @@ class BEAMVarianceMin(BaseBackend):
         memory: _BandMemory,
     ) -> Tuple[np.ndarray, np.ndarray]:
         query_normalized = l2_normalize(query, eps=self.eps)
-        query_count, frequency_count, _ = query.shape
-        raw_band = np.empty((query_count, frequency_count), dtype=np.float32)
-        main_band = np.empty_like(raw_band)
+        query_count = len(query)
+        raw_score = np.empty(query_count, dtype=np.float32)
+        main_score = np.empty_like(raw_score)
         if query_paths is not None and memory.paths is None:
             logger.warning(
                 "Reference paths are unavailable; self matches cannot be excluded."
@@ -386,19 +393,31 @@ class BEAMVarianceMin(BaseBackend):
                 raise ValueError(
                     "Self-match exclusion removed every reference for at least one query"
                 )
-            raw_band[query_slice] = minimum_band_scores(distance)
-            if self.use_rescaling:
-                main_band[query_slice] = minimum_band_scores(
-                    distance,
-                    local_density=memory.local_density,
-                    alpha=memory.alpha,
-                )
+            if self.neighbor_mode == "per_band":
+                raw_score[query_slice] = minimum_band_scores(distance).mean(axis=1)
+                if self.use_rescaling:
+                    main_score[query_slice] = minimum_band_scores(
+                        distance,
+                        local_density=memory.local_density,
+                        alpha=memory.alpha,
+                    ).mean(axis=1)
+                else:
+                    main_score[query_slice] = raw_score[query_slice]
             else:
-                main_band[query_slice] = raw_band[query_slice]
+                raw_score[query_slice] = distance.mean(axis=2).min(axis=1)
+                if self.use_rescaling:
+                    adjusted = (
+                        distance
+                        - memory.alpha[None, None, :]
+                        * memory.local_density[None, :, :]
+                    )
+                    main_score[query_slice] = adjusted.mean(axis=2).min(axis=1)
+                else:
+                    main_score[query_slice] = raw_score[query_slice]
 
-        if not np.isfinite(raw_band).all() or not np.isfinite(main_band).all():
+        if not np.isfinite(raw_score).all() or not np.isfinite(main_score).all():
             raise FloatingPointError("BEAM scoring produced NaN or Inf")
-        return raw_band, main_band
+        return raw_score, main_score
 
     def anomaly_score(self, test_dict: dict) -> Dict[str, np.ndarray]:
         if not self.memory or self.band_shape is None:
@@ -420,13 +439,13 @@ class BEAMVarianceMin(BaseBackend):
             if section_value not in self.memory:
                 raise KeyError(f"No fitted memory for section {section_value!r}")
             selected = sections == section_value
-            raw_band, main_band = self._score_section(
+            section_raw, section_main = self._score_section(
                 embeddings[selected],
                 None if paths is None else paths[selected],
                 self.memory[section_value],
             )
-            raw_score[selected] = raw_band.mean(axis=1)
-            main_score[selected] = main_band.mean(axis=1)
+            raw_score[selected] = section_raw
+            main_score[selected] = section_main
 
         return {
             "main": main_score,

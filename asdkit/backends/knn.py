@@ -22,6 +22,7 @@ class Knn(BaseBackend):
         metric: str = "cosine",
         smote_ratio: float = 0,
         smote_neighbors: int = 2,
+        random_state: int = 0,
         sep_section: bool = False,
         embed_key: str = "embed",
     ):
@@ -32,6 +33,7 @@ class Knn(BaseBackend):
             metric (str): Distance metric. Options are "euclid" or "cosine". Defaults to "cosine".
             smote_ratio (float): Ratio of SMOTE sampling applied to the target domain. Defaults to 0 (no SMOTE).
             smote_neighbors (int): Number of neighbors for SMOTE. Defaults to 5.
+            random_state (int): Random seed used by SMOTE. Defaults to 0.
             sep_section (bool, optional): Whether to separately construct a backend for each section. Defaults to False.
             embed_key (str, optional): Key to access embeddings in the extract_dict. Defaults to "embed".
         """
@@ -51,9 +53,10 @@ class Knn(BaseBackend):
         else:
             self.smote = SMOTE(
                 sampling_strategy=smote_ratio,  # type: ignore
-                random_state=0,
+                random_state=random_state,
                 k_neighbors=smote_neighbors,
             )
+        self.random_state = random_state
         self.embed_key = embed_key
 
     def get_section(self, extract_dict: dict) -> np.ndarray:

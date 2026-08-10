@@ -58,6 +58,32 @@ def test_beam_chooses_different_neighbor_per_band():
     assert tied_global.min() > raw[0]
 
 
+def test_coupled_beam_uses_one_reference_for_all_bands():
+    references = np.array(
+        [
+            [[1.0, 0.0], [-1.0, 0.0]],
+            [[-1.0, 0.0], [1.0, 0.0]],
+        ],
+        dtype=np.float32,
+    )
+    query = np.array([[[1.0, 0.0], [1.0, 0.0]]], dtype=np.float32)
+    train = _dict(references, ["r0", "r1"], [1, 1])
+    test = _dict(query, ["query"])
+
+    independent = BEAMVarianceMin(use_rescaling=False, neighbor_mode="per_band")
+    coupled = BEAMVarianceMin(use_rescaling=False, neighbor_mode="coupled")
+    independent.fit(train)
+    coupled.fit(train)
+
+    np.testing.assert_allclose(independent.anomaly_score(test)["main"], [0.0])
+    np.testing.assert_allclose(coupled.anomaly_score(test)["main"], [0.5])
+
+
+def test_coupled_beam_rejects_unknown_neighbor_mode():
+    with pytest.raises(ValueError, match="neighbor_mode"):
+        BEAMVarianceMin(neighbor_mode="frequency_shuffle")
+
+
 def test_local_density_excludes_self():
     references = np.array(
         [[[1.0, 0.0]], [[0.5, np.sqrt(3) / 2]], [[-1.0, 0.0]]],

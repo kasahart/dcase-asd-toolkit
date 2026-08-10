@@ -1,0 +1,11 @@
+# @package _global_
+backend:
+  - tgt_class: asdkit.backends.BEAMVarianceMin
+    embed_key: embed_freq
+    sep_section: false
+    use_rescaling: false
+    rescale_k: 4
+    rescale_validation: train_all
+    rescale_scope: per_band
+    neighbor_mode: coupled
+    chunk_size: 128
