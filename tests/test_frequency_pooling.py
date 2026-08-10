@@ -34,7 +34,7 @@ def test_rdp_float16_constant_sequence_has_finite_gradient():
     assert torch.isfinite(pooled).all()
     assert torch.isfinite(weights).all()
     assert torch.isfinite(x.grad).all()
-    torch.testing.assert_close(pooled, x.detach().mean(dim=1))
+    torch.testing.assert_close(pooled, x.detach()[:, 0])
 
 
 def test_rdp_large_gamma_uses_finite_log_space_weights():
@@ -65,6 +65,21 @@ def test_low_precision_pooling_accumulates_in_float32(mode):
     torch.testing.assert_close(
         pooled.float(), torch.full((1, 2, 3), 10_000.0)
     )
+
+
+@pytest.mark.parametrize("mode", ["mean", "rdp"])
+def test_bfloat16_pooling_avoids_float32_range_overflow(mode):
+    x = torch.full(
+        (1, 2, 1, 1), 2e38, dtype=torch.bfloat16, requires_grad=True
+    )
+
+    pooled = frequency_pooling(x, mode=mode, gamma=4)
+    pooled.float().sum().backward()
+
+    assert pooled.dtype == x.dtype
+    assert torch.isfinite(pooled).all()
+    assert torch.isfinite(x.grad).all()
+    torch.testing.assert_close(pooled, x.detach()[:, 0])
 
 
 def test_rdp_emphasizes_transient_patch():

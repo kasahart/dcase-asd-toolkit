@@ -89,8 +89,10 @@ def relative_deviation_pooling(
 
     mask = _expand_valid_time_mask(valid_time_mask, x_tf)
     compute_dtype = (
-        torch.float32
-        if x_tf.dtype in {torch.float16, torch.bfloat16}
+        torch.float64
+        if x_tf.dtype == torch.bfloat16
+        else torch.float32
+        if x_tf.dtype == torch.float16
         else x_tf.dtype
     )
     x_compute = x_tf.to(dtype=compute_dtype)
@@ -156,8 +158,10 @@ def frequency_pooling(
         raise ValueError("x_tf contains NaN or Inf")
     mask = _expand_valid_time_mask(valid_time_mask, x_tf)
     compute_dtype = (
-        torch.float32
-        if x_tf.dtype in {torch.float16, torch.bfloat16}
+        torch.float64
+        if x_tf.dtype == torch.bfloat16
+        else torch.float32
+        if x_tf.dtype == torch.float16
         else x_tf.dtype
     )
     x_compute = x_tf.to(dtype=compute_dtype)
