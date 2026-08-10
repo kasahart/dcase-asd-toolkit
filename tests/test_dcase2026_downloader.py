@@ -55,7 +55,12 @@ def _prepare_download_tree(tmp_path, *, partial_archive=None):
 
 
 def _fake_command_environment(
-    tmp_path, *, evaluator_dirty=False, resume_produces_valid_archive=True
+    tmp_path,
+    *,
+    evaluator_dirty=False,
+    evaluator_has_origin=True,
+    extraction_fails=False,
+    resume_produces_valid_archive=True,
 ):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -98,6 +103,9 @@ else
   destination=$4
   printf 'unzip %s\n' "${archive}" >> "${DCASE_TEST_LOG}"
   [ "$(cat "${archive}")" = complete ]
+  if [ "${DCASE_TEST_EXTRACTION_FAIL}" = 1 ]; then
+    exit 1
+  fi
   payload_dir="${destination}/${archive%.zip}"
   mkdir -p "${payload_dir}"
   printf complete > "${payload_dir}/payload.wav"
@@ -111,7 +119,13 @@ set -eu
 if [ "$1" = "-C" ]; then
   shift 2
 fi
+printf 'git %s\n' "$*" >> "${DCASE_TEST_LOG}"
 case "$1" in
+  remote)
+    if [ "$2" = "get-url" ] && [ "${DCASE_TEST_HAS_ORIGIN}" = 0 ]; then
+      exit 2
+    fi
+    ;;
   status)
     if [ "${DCASE_TEST_DIRTY:-0}" = 1 ]; then
       printf ' M ground_truth_attributes/ground_truth_ToyDrone_section_00_test.csv\n'
@@ -129,13 +143,17 @@ esac
         {
             "PATH": f"{fake_bin}:{env['PATH']}",
             "DCASE_TEST_DIRTY": "1" if evaluator_dirty else "0",
+            "DCASE_TEST_EXTRACTION_FAIL": "1" if extraction_fails else "0",
+            "DCASE_TEST_HAS_ORIGIN": "1" if evaluator_has_origin else "0",
             "DCASE_TEST_LOG": str(log_path),
             "DCASE_TEST_REV": revision,
             "DCASE_TEST_RESUME_VALID": (
                 "1" if resume_produces_valid_archive else "0"
             ),
+            "TMPDIR": str(tmp_path / "staging"),
         }
     )
+    Path(env["TMPDIR"]).mkdir()
     return env, log_path
 
 
@@ -227,3 +245,38 @@ def test_downloader_rejects_dirty_pinned_evaluator(tmp_path):
     assert result.returncode != 0
     assert "Evaluator directory has local changes" in result.stderr
     assert changed_csv.read_text() == "locally modified\n"
+
+
+def test_downloader_cleans_failed_extraction_staging_directory(tmp_path):
+    data_dir, _ = _prepare_download_tree(tmp_path)
+    env, _ = _fake_command_environment(tmp_path, extraction_fails=True)
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), str(data_dir)],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Failed to extract archive into staging directory" in result.stderr
+    assert list(Path(env["TMPDIR"]).iterdir()) == []
+
+
+def test_downloader_repairs_evaluator_without_origin_remote(tmp_path):
+    data_dir, _ = _prepare_download_tree(tmp_path)
+    env, log_path = _fake_command_environment(
+        tmp_path, evaluator_has_origin=False
+    )
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), str(data_dir)],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "git remote add origin" in log_path.read_text()

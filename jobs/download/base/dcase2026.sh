@@ -31,9 +31,10 @@ download_archive() {
     return 1
   fi
 
-  staging_dir=$(mktemp -d ".${archive}.extract.XXXXXX")
+  staging_dir=$(mktemp -d "${TMPDIR:-/tmp}/dcase2026-${archive}.extract.XXXXXX")
   if ! unzip -q "${archive}" -d "${staging_dir}"; then
     echo "Failed to extract archive into staging directory: ${archive}" >&2
+    rm -rf -- "${staging_dir}"
     return 1
   fi
   (
@@ -99,12 +100,14 @@ done
 # Download the official post-challenge evaluation labels and evaluator.
 if [ ! -e "${evaluator_dir}" ]; then
   git init "${evaluator_dir}"
-  git -C "${evaluator_dir}" remote add origin "${evaluator_url}"
 elif [ ! -d "${evaluator_dir}/.git" ]; then
   echo "Incomplete evaluator directory (not a git repository): ${evaluator_dir}" >&2
   exit 1
-else
+fi
+if git -C "${evaluator_dir}" remote get-url origin >/dev/null 2>&1; then
   git -C "${evaluator_dir}" remote set-url origin "${evaluator_url}"
+else
+  git -C "${evaluator_dir}" remote add origin "${evaluator_url}"
 fi
 
 if [ -n "$(git -C "${evaluator_dir}" status --porcelain --untracked-files=all)" ]; then
