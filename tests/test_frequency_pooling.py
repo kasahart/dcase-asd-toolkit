@@ -98,6 +98,19 @@ def test_full_precision_pooling_uses_overflow_safe_mean(dtype, value, mode):
     torch.testing.assert_close(pooled, x.detach()[:, 0])
 
 
+@pytest.mark.parametrize("mode", ["mean", "rdp"])
+def test_float32_pooling_avoids_rounded_weight_overflow(mode):
+    value = torch.finfo(torch.float32).max
+    x = torch.full((1, 43, 1, 1), value, requires_grad=True)
+
+    pooled = frequency_pooling(x, mode=mode, gamma=4)
+    pooled.sum().backward()
+
+    assert torch.isfinite(pooled).all()
+    assert torch.isfinite(x.grad).all()
+    torch.testing.assert_close(pooled, x.detach()[:, 0])
+
+
 @pytest.mark.parametrize(
     ("dtype", "value"),
     [(torch.float32, 3e38), (torch.float64, 1e308)],
@@ -139,11 +152,38 @@ def test_rdp_valid_time_mask_can_differ_by_frequency():
     torch.testing.assert_close(pooled, torch.tensor([[[2.0], [30.0]]]))
 
 
+def test_rdp_masks_values_before_band_scaling():
+    x = torch.tensor([1e-30, 2e-30, 3e38]).reshape(1, 3, 1, 1).requires_grad_()
+    mask = torch.tensor([[True, True, False]])
+
+    pooled, weights = relative_deviation_pooling(
+        x, gamma=4, eps=1e-35, valid_time_mask=mask, return_weights=True
+    )
+    expected, expected_weights = relative_deviation_pooling(
+        x[:, :2], gamma=4, eps=1e-35, return_weights=True
+    )
+    pooled.sum().backward()
+
+    assert torch.isfinite(pooled).all()
+    assert torch.isfinite(weights).all()
+    assert torch.isfinite(x.grad).all()
+    torch.testing.assert_close(pooled, expected)
+    torch.testing.assert_close(weights[:, :2], expected_weights)
+    torch.testing.assert_close(weights[:, 2], torch.zeros_like(weights[:, 2]))
+
+
 def test_rdp_rejects_band_without_valid_time_patch():
     x = torch.ones(1, 2, 2, 1)
     mask = torch.tensor([[[True, False], [True, False]]])
     with pytest.raises(ValueError, match="needs a valid time patch"):
         relative_deviation_pooling(x, valid_time_mask=mask)
+
+
+@pytest.mark.parametrize("mode", ["mean", "rdp"])
+def test_frequency_pooling_rejects_empty_time_axis(mode):
+    x = torch.empty(1, 0, 2, 3)
+    with pytest.raises(ValueError, match="at least one time patch"):
+        frequency_pooling(x, mode=mode)
 
 
 def test_rdp_rejects_bad_inputs():

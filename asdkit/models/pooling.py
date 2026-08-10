@@ -35,6 +35,8 @@ def _expand_valid_time_mask(
     valid_time_mask: Optional[torch.Tensor], x_tf: torch.Tensor
 ) -> torch.Tensor:
     batch, time, frequency, _ = x_tf.shape
+    if time == 0:
+        raise ValueError("x_tf must contain at least one time patch")
     if valid_time_mask is None:
         return torch.ones(
             (batch, time, frequency), dtype=torch.bool, device=x_tf.device
@@ -99,13 +101,12 @@ def relative_deviation_pooling(
     mask_value = mask.unsqueeze(-1).to(dtype=compute_dtype)
     valid_count = mask_value.sum(dim=1)
     mean_weight = mask_value / valid_count.unsqueeze(1)
-    band_scale = (x_compute * mask_value).abs().amax(
-        dim=(1, 3), keepdim=True
-    )
+    valid_x = x_compute.masked_fill(~mask.unsqueeze(-1), 0)
+    band_scale = valid_x.abs().amax(dim=(1, 3), keepdim=True)
     safe_band_scale = torch.where(
         band_scale > 0, band_scale, torch.ones_like(band_scale)
     )
-    x_scaled = x_compute / safe_band_scale
+    x_scaled = valid_x / safe_band_scale
     mean_scaled = (x_scaled * mean_weight).sum(dim=1)
 
     distance = torch.linalg.vector_norm(
@@ -131,7 +132,12 @@ def relative_deviation_pooling(
     log_weight = torch.log1p(normalized_distance.to(dtype=weight_dtype)) * gamma
     log_weight = log_weight.masked_fill(~mask, -torch.inf)
     weight_compute = torch.softmax(log_weight, dim=1).to(dtype=compute_dtype)
-    pooled = (x_compute * weight_compute.unsqueeze(-1)).sum(dim=1).to(x_tf.dtype)
+    pooled_scaled = (x_scaled * weight_compute.unsqueeze(-1)).sum(dim=1)
+    # A convex combination is mathematically in [-1, 1], but rounded weights
+    # can sum to slightly more than one and overflow when rescaled by finfo.max.
+    pooled = (
+        pooled_scaled.clamp(min=-1, max=1) * band_scale.squeeze(1)
+    ).to(x_tf.dtype)
     weight = weight_compute.to(dtype=x_tf.dtype)
 
     if not torch.isfinite(pooled).all() or not torch.isfinite(weight).all():
@@ -178,4 +184,12 @@ def frequency_pooling(
     x_compute = x_tf.to(dtype=compute_dtype)
     mask_value = mask.unsqueeze(-1).to(dtype=compute_dtype)
     mean_weight = mask_value / mask_value.sum(dim=1).unsqueeze(1)
-    return (x_compute * mean_weight).sum(dim=1).to(x_tf.dtype)
+    valid_x = x_compute.masked_fill(~mask.unsqueeze(-1), 0)
+    band_scale = valid_x.abs().amax(dim=(1, 3), keepdim=True)
+    safe_band_scale = torch.where(
+        band_scale > 0, band_scale, torch.ones_like(band_scale)
+    )
+    mean_scaled = ((valid_x / safe_band_scale) * mean_weight).sum(dim=1)
+    return (
+        mean_scaled.clamp(min=-1, max=1) * band_scale.squeeze(1)
+    ).to(x_tf.dtype)
