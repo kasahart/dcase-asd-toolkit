@@ -119,12 +119,33 @@ class BEATs(nn.Module):
             grid_shape: Tuple[int, int],
     ) -> torch.Tensor:
         time_patches, frequency_patches = grid_shape
-        extra = padding_mask.size(1) % time_patches
-        if extra > 0:
-            padding_mask = padding_mask[:, :-extra]
-        time_padding_mask = padding_mask.view(
-            padding_mask.size(0), time_patches, -1
-        ).all(-1)
+        kernel = self.patch_embedding.kernel_size[0]
+        stride = self.patch_embedding.stride[0]
+        padding = self.patch_embedding.padding[0]
+        dilation = self.patch_embedding.dilation[0]
+        input_frames = padding_mask.size(1)
+        expected_time_patches = (
+            input_frames + 2 * padding - dilation * (kernel - 1) - 1
+        ) // stride + 1
+        if expected_time_patches != time_patches:
+            raise ValueError(
+                "Padding mask and patch convolution disagree on the time grid: "
+                f"mask_frames={input_frames}, T_p={time_patches}, "
+                f"expected_T_p={expected_time_patches}"
+            )
+
+        starts = torch.arange(
+            time_patches, device=padding_mask.device
+        ).unsqueeze(1) * stride - padding
+        offsets = torch.arange(
+            kernel, device=padding_mask.device
+        ).unsqueeze(0) * dilation
+        frame_indices = starts + offsets
+        in_bounds = (frame_indices >= 0) & (frame_indices < input_frames)
+        frame_indices = frame_indices.clamp(0, input_frames - 1)
+        window_padding = padding_mask[:, frame_indices]
+        window_padding = window_padding | ~in_bounds.unsqueeze(0)
+        time_padding_mask = window_padding.all(-1)
         return time_padding_mask.unsqueeze(-1).expand(
             -1, -1, frequency_patches
         ).reshape(padding_mask.size(0), time_patches * frequency_patches)

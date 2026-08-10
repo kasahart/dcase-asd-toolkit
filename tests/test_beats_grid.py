@@ -83,6 +83,24 @@ def test_patch_padding_mask_repeats_each_time_mask_across_frequency():
     )
 
 
+def test_patch_padding_mask_uses_convolution_windows_for_remainder_frames():
+    model = _tiny_beats()
+    model.patch_embedding = nn.Conv2d(
+        1, 4, kernel_size=16, stride=16, bias=False
+    )
+    padding_mask = torch.tensor([[False] * 17 + [True] * 18])
+
+    _, sequence_padding_mask, grid_shape = model.extract_features_with_grid(
+        torch.zeros(1, 35, 32), padding_mask=padding_mask
+    )
+
+    assert grid_shape == (2, 2)
+    torch.testing.assert_close(
+        sequence_padding_mask,
+        torch.tensor([[False, False, False, False]]),
+    )
+
+
 def test_grid_api_rejects_finetuned_predictor_without_patch_execution():
     model = _tiny_beats()
     model.predictor = nn.Linear(4, 3)
