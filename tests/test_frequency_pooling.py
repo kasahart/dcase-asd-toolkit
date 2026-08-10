@@ -50,6 +50,23 @@ def test_rdp_large_gamma_uses_finite_log_space_weights():
     assert weights[0, 3, 0] > weights[0, 0, 0]
 
 
+@pytest.mark.parametrize("mode", ["mean", "rdp"])
+def test_low_precision_pooling_accumulates_in_float32(mode):
+    x = torch.full(
+        (1, 8, 2, 3), 10_000.0, dtype=torch.float16, requires_grad=True
+    )
+
+    pooled = frequency_pooling(x, mode=mode, gamma=4)
+    pooled.float().sum().backward()
+
+    assert pooled.dtype == x.dtype
+    assert torch.isfinite(pooled).all()
+    assert torch.isfinite(x.grad).all()
+    torch.testing.assert_close(
+        pooled.float(), torch.full((1, 2, 3), 10_000.0)
+    )
+
+
 def test_rdp_emphasizes_transient_patch():
     x = torch.tensor([0.0, 0.0, 0.0, 10.0]).reshape(1, 4, 1, 1)
     pooled, weights = relative_deviation_pooling(x, gamma=4, return_weights=True)

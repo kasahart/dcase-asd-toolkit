@@ -88,11 +88,17 @@ def relative_deviation_pooling(
         raise ValueError(f"eps must be finite and positive, got {eps}")
 
     mask = _expand_valid_time_mask(valid_time_mask, x_tf)
-    mask_value = mask.unsqueeze(-1).to(dtype=x_tf.dtype)
+    compute_dtype = (
+        torch.float32
+        if x_tf.dtype in {torch.float16, torch.bfloat16}
+        else x_tf.dtype
+    )
+    x_compute = x_tf.to(dtype=compute_dtype)
+    mask_value = mask.unsqueeze(-1).to(dtype=compute_dtype)
     valid_count = mask_value.sum(dim=1)
-    mean = (x_tf * mask_value).sum(dim=1) / valid_count
+    mean = (x_compute * mask_value).sum(dim=1) / valid_count
 
-    distance = torch.linalg.vector_norm(x_tf - mean.unsqueeze(1), dim=-1)
+    distance = torch.linalg.vector_norm(x_compute - mean.unsqueeze(1), dim=-1)
     distance = distance.masked_fill(~mask, 0)
     max_distance = distance.amax(dim=1, keepdim=True)
     has_deviation = max_distance > eps
@@ -107,14 +113,13 @@ def relative_deviation_pooling(
     weight_dtype = (
         torch.float64
         if gamma > torch.finfo(torch.float32).max
-        else torch.float32
-        if x_tf.dtype in {torch.float16, torch.bfloat16}
-        else x_tf.dtype
+        else compute_dtype
     )
     log_weight = torch.log1p(normalized_distance.to(dtype=weight_dtype)) * gamma
     log_weight = log_weight.masked_fill(~mask, -torch.inf)
-    weight = torch.softmax(log_weight, dim=1).to(dtype=x_tf.dtype)
-    pooled = (x_tf * weight.unsqueeze(-1)).sum(dim=1)
+    weight_compute = torch.softmax(log_weight, dim=1).to(dtype=compute_dtype)
+    pooled = (x_compute * weight_compute.unsqueeze(-1)).sum(dim=1).to(x_tf.dtype)
+    weight = weight_compute.to(dtype=x_tf.dtype)
 
     if not torch.isfinite(pooled).all() or not torch.isfinite(weight).all():
         raise FloatingPointError("RDP produced a non-finite result")
@@ -150,5 +155,13 @@ def frequency_pooling(
     if not torch.isfinite(x_tf).all():
         raise ValueError("x_tf contains NaN or Inf")
     mask = _expand_valid_time_mask(valid_time_mask, x_tf)
-    mask_value = mask.unsqueeze(-1).to(dtype=x_tf.dtype)
-    return (x_tf * mask_value).sum(dim=1) / mask_value.sum(dim=1)
+    compute_dtype = (
+        torch.float32
+        if x_tf.dtype in {torch.float16, torch.bfloat16}
+        else x_tf.dtype
+    )
+    x_compute = x_tf.to(dtype=compute_dtype)
+    mask_value = mask.unsqueeze(-1).to(dtype=compute_dtype)
+    return (
+        (x_compute * mask_value).sum(dim=1) / mask_value.sum(dim=1)
+    ).to(x_tf.dtype)
