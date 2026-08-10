@@ -98,6 +98,26 @@ def test_full_precision_pooling_uses_overflow_safe_mean(dtype, value, mode):
     torch.testing.assert_close(pooled, x.detach()[:, 0])
 
 
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [(torch.float32, 3e38), (torch.float64, 1e308)],
+)
+def test_rdp_scales_deviations_before_vector_norm(dtype, value):
+    x = torch.tensor(
+        [[[[value, value]], [[-value, -value]]]],
+        dtype=dtype,
+    )
+
+    pooled, weights = relative_deviation_pooling(
+        x, gamma=4, return_weights=True
+    )
+
+    assert torch.isfinite(pooled).all()
+    assert torch.isfinite(weights).all()
+    torch.testing.assert_close(pooled, torch.zeros_like(pooled))
+    torch.testing.assert_close(weights, torch.full_like(weights, 0.5))
+
+
 def test_rdp_emphasizes_transient_patch():
     x = torch.tensor([0.0, 0.0, 0.0, 10.0]).reshape(1, 4, 1, 1)
     pooled, weights = relative_deviation_pooling(x, gamma=4, return_weights=True)

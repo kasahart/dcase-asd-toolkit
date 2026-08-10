@@ -99,12 +99,22 @@ def relative_deviation_pooling(
     mask_value = mask.unsqueeze(-1).to(dtype=compute_dtype)
     valid_count = mask_value.sum(dim=1)
     mean_weight = mask_value / valid_count.unsqueeze(1)
-    mean = (x_compute * mean_weight).sum(dim=1)
+    band_scale = (x_compute * mask_value).abs().amax(
+        dim=(1, 3), keepdim=True
+    )
+    safe_band_scale = torch.where(
+        band_scale > 0, band_scale, torch.ones_like(band_scale)
+    )
+    x_scaled = x_compute / safe_band_scale
+    mean_scaled = (x_scaled * mean_weight).sum(dim=1)
 
-    distance = torch.linalg.vector_norm(x_compute - mean.unsqueeze(1), dim=-1)
+    distance = torch.linalg.vector_norm(
+        x_scaled - mean_scaled.unsqueeze(1), dim=-1
+    )
     distance = distance.masked_fill(~mask, 0)
     max_distance = distance.amax(dim=1, keepdim=True)
-    has_deviation = max_distance > eps
+    scaled_eps = eps / safe_band_scale.squeeze(-1)
+    has_deviation = max_distance > scaled_eps
     safe_max_distance = torch.where(
         has_deviation, max_distance, torch.ones_like(max_distance)
     )
