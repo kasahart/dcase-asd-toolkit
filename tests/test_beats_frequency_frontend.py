@@ -101,13 +101,23 @@ def test_frequency_frontend_propagates_wave_padding_to_encoder_and_pooling(
     wave = torch.zeros(1, 100)
     wave_padding_mask = torch.zeros_like(wave, dtype=torch.bool)
     wave_padding_mask[:, 80:] = True
+    valid_time_mask = torch.tensor(
+        [[[False, True], [True, True], [True, True]]]
+    )
 
     output = frontend.extract(
-        {"wave": wave, "padding_mask": wave_padding_mask}
+        {
+            "wave": wave,
+            "padding_mask": wave_padding_mask,
+            "valid_time_mask": valid_time_mask,
+        }
     )
 
     assert model.received_padding_mask is wave_padding_mask
-    expected = model._sequence(wave).reshape(1, 3, 2, 4)[:, :2].mean(dim=1)
+    sequence = model._sequence(wave).reshape(1, 3, 2, 4)
+    expected = torch.stack(
+        [sequence[:, 1, 0], sequence[:, :2, 1].mean(dim=1)], dim=1
+    )
     torch.testing.assert_close(output["embed_freq"], expected)
 
 

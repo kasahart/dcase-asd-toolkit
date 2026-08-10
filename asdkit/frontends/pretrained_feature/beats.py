@@ -75,9 +75,28 @@ class BEATsFrequencyPoolingFrozenModel(BEATsFrozenModel):
         z_tf = sequence_to_time_frequency(z_seq, grid_shape)
         valid_time_mask = batch.get("valid_time_mask")
         if sequence_padding_mask is not None:
-            valid_time_mask = ~sequence_padding_mask.reshape(
+            sequence_valid_mask = ~sequence_padding_mask.reshape(
                 x.shape[0], grid_shape[0], grid_shape[1]
             )
+            if valid_time_mask is None:
+                valid_time_mask = sequence_valid_mask
+            else:
+                if valid_time_mask.dtype != sequence_valid_mask.dtype:
+                    raise TypeError("valid_time_mask must have dtype torch.bool")
+                if valid_time_mask.device != sequence_valid_mask.device:
+                    raise ValueError(
+                        "valid_time_mask and BEATs output must be on the same device"
+                    )
+                expected_2d = (x.shape[0], grid_shape[0])
+                expected_3d = (x.shape[0], grid_shape[0], grid_shape[1])
+                if valid_time_mask.shape == expected_2d:
+                    valid_time_mask = valid_time_mask.unsqueeze(-1)
+                elif valid_time_mask.shape != expected_3d:
+                    raise ValueError(
+                        "valid_time_mask must have shape [B, T] or [B, T, F], "
+                        f"but got {tuple(valid_time_mask.shape)}"
+                    )
+                valid_time_mask = valid_time_mask & sequence_valid_mask
         z_freq = frequency_pooling(
             z_tf,
             mode=self.pooling,
