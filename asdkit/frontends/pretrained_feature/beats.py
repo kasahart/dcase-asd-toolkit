@@ -67,14 +67,23 @@ class BEATsFrequencyPoolingFrozenModel(BEATsFrozenModel):
             self.device = x.device
             self.model.to(self.device)
 
-        z_seq, _, grid_shape = self.model.extract_features_with_grid(x)
+        z_seq, sequence_padding_mask, grid_shape = (
+            self.model.extract_features_with_grid(
+                x, padding_mask=batch.get("padding_mask")
+            )
+        )
         z_tf = sequence_to_time_frequency(z_seq, grid_shape)
+        valid_time_mask = batch.get("valid_time_mask")
+        if sequence_padding_mask is not None:
+            valid_time_mask = ~sequence_padding_mask.reshape(
+                x.shape[0], grid_shape[0], grid_shape[1]
+            )
         z_freq = frequency_pooling(
             z_tf,
             mode=self.pooling,
             gamma=self.gamma,
             eps=self.eps,
-            valid_time_mask=batch.get("valid_time_mask"),
+            valid_time_mask=valid_time_mask,
         )
         output = {
             "embed_freq": z_freq,

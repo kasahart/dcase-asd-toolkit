@@ -12,12 +12,20 @@ from asdkit.frontends.pretrained_feature.beats import (
 
 
 class _DummyBEATs(nn.Module):
-    def __init__(self, time_patches=3, frequency_patches=8, dimension=768):
+    def __init__(
+        self,
+        time_patches=3,
+        frequency_patches=8,
+        dimension=768,
+        sequence_padding_mask=None,
+    ):
         super().__init__()
         self.anchor = nn.Parameter(torch.zeros(()))
         self.time_patches = time_patches
         self.frequency_patches = frequency_patches
         self.dimension = dimension
+        self.sequence_padding_mask = sequence_padding_mask
+        self.received_padding_mask = None
 
     def _sequence(self, wave):
         length = self.time_patches * self.frequency_patches
@@ -30,10 +38,11 @@ class _DummyBEATs(nn.Module):
     def extract_features(self, wave):
         return self._sequence(wave), None
 
-    def extract_features_with_grid(self, wave):
+    def extract_features_with_grid(self, wave, padding_mask=None):
+        self.received_padding_mask = padding_mask
         return (
             self._sequence(wave),
-            None,
+            self.sequence_padding_mask,
             (self.time_patches, self.frequency_patches),
         )
 
@@ -71,6 +80,35 @@ def test_frequency_frontend_can_emit_patch_sequence_for_debugging(monkeypatch):
     )
     output = frontend.extract({"wave": torch.zeros(1, 100)})
     assert output["patch_sequence"].shape == (1, 3 * 8, 768)
+
+
+def test_frequency_frontend_propagates_wave_padding_to_encoder_and_pooling(
+    monkeypatch,
+):
+    sequence_padding_mask = torch.tensor(
+        [[False, False, False, False, True, True]]
+    )
+    model = _DummyBEATs(
+        time_patches=3,
+        frequency_patches=2,
+        dimension=4,
+        sequence_padding_mask=sequence_padding_mask,
+    )
+    monkeypatch.setattr(
+        BEATsFrozenModel, "construct_model", lambda self, **kwargs: model
+    )
+    frontend = BEATsFrequencyPoolingFrozenModel(model_cfg={}, pooling="mean")
+    wave = torch.zeros(1, 100)
+    wave_padding_mask = torch.zeros_like(wave, dtype=torch.bool)
+    wave_padding_mask[:, 80:] = True
+
+    output = frontend.extract(
+        {"wave": wave, "padding_mask": wave_padding_mask}
+    )
+
+    assert model.received_padding_mask is wave_padding_mask
+    expected = model._sequence(wave).reshape(1, 3, 2, 4)[:, :2].mean(dim=1)
+    torch.testing.assert_close(output["embed_freq"], expected)
 
 
 def test_frequency_frontend_rejects_unknown_pooling():
