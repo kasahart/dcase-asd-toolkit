@@ -95,14 +95,25 @@ def relative_deviation_pooling(
     distance = torch.linalg.vector_norm(x_tf - mean.unsqueeze(1), dim=-1)
     distance = distance.masked_fill(~mask, 0)
     max_distance = distance.amax(dim=1, keepdim=True)
+    has_deviation = max_distance > eps
+    safe_max_distance = torch.where(
+        has_deviation, max_distance, torch.ones_like(max_distance)
+    )
     normalized_distance = torch.where(
-        max_distance > eps,
-        distance / max_distance.clamp_min(eps),
+        has_deviation,
+        distance / safe_max_distance,
         torch.zeros_like(distance),
     )
-    unnormalized_weight = (1 + normalized_distance).pow(gamma)
-    unnormalized_weight = unnormalized_weight * mask.to(dtype=x_tf.dtype)
-    weight = unnormalized_weight / unnormalized_weight.sum(dim=1, keepdim=True)
+    weight_dtype = (
+        torch.float64
+        if gamma > torch.finfo(torch.float32).max
+        else torch.float32
+        if x_tf.dtype in {torch.float16, torch.bfloat16}
+        else x_tf.dtype
+    )
+    log_weight = torch.log1p(normalized_distance.to(dtype=weight_dtype)) * gamma
+    log_weight = log_weight.masked_fill(~mask, -torch.inf)
+    weight = torch.softmax(log_weight, dim=1).to(dtype=x_tf.dtype)
     pooled = (x_tf * weight.unsqueeze(-1)).sum(dim=1)
 
     if not torch.isfinite(pooled).all() or not torch.isfinite(weight).all():

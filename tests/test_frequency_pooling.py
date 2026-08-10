@@ -23,6 +23,33 @@ def test_rdp_constant_sequence_is_finite_and_matches_mean():
     torch.testing.assert_close(pooled, x.mean(dim=1))
 
 
+def test_rdp_float16_constant_sequence_has_finite_gradient():
+    x = torch.full((1, 4, 2, 3), 2.5, dtype=torch.float16, requires_grad=True)
+
+    pooled, weights = relative_deviation_pooling(
+        x, gamma=8, return_weights=True
+    )
+    pooled.sum().backward()
+
+    assert torch.isfinite(pooled).all()
+    assert torch.isfinite(weights).all()
+    assert torch.isfinite(x.grad).all()
+    torch.testing.assert_close(pooled, x.detach().mean(dim=1))
+
+
+def test_rdp_large_gamma_uses_finite_log_space_weights():
+    x = torch.tensor([0.0, 0.0, 0.0, 10.0]).reshape(1, 4, 1, 1)
+
+    pooled, weights = relative_deviation_pooling(
+        x, gamma=200, return_weights=True
+    )
+
+    assert torch.isfinite(pooled).all()
+    assert torch.isfinite(weights).all()
+    torch.testing.assert_close(weights.sum(dim=1), torch.ones(1, 1))
+    assert weights[0, 3, 0] > weights[0, 0, 0]
+
+
 def test_rdp_emphasizes_transient_patch():
     x = torch.tensor([0.0, 0.0, 0.0, 10.0]).reshape(1, 4, 1, 1)
     pooled, weights = relative_deviation_pooling(x, gamma=4, return_weights=True)
