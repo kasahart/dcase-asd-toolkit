@@ -136,7 +136,7 @@ def relative_deviation_pooling(
     # A convex combination is mathematically in [-1, 1], but rounded weights
     # can sum to slightly more than one and overflow when rescaled by finfo.max.
     pooled = (
-        pooled_scaled.clamp(min=-1, max=1) * band_scale.squeeze(1)
+        pooled_scaled.clamp(min=-1, max=1) * safe_band_scale.squeeze(1)
     ).to(x_tf.dtype)
     weight = weight_compute.to(dtype=x_tf.dtype)
 
@@ -191,5 +191,5 @@ def frequency_pooling(
     )
     mean_scaled = ((valid_x / safe_band_scale) * mean_weight).sum(dim=1)
     return (
-        mean_scaled.clamp(min=-1, max=1) * band_scale.squeeze(1)
+        mean_scaled.clamp(min=-1, max=1) * safe_band_scale.squeeze(1)
     ).to(x_tf.dtype)

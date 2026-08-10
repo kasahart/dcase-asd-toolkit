@@ -23,6 +23,17 @@ def test_rdp_constant_sequence_is_finite_and_matches_mean():
     torch.testing.assert_close(pooled, x.mean(dim=1))
 
 
+@pytest.mark.parametrize("mode", ["mean", "rdp"])
+def test_zero_band_preserves_uniform_input_gradients(mode):
+    x = torch.zeros(1, 4, 2, 3, requires_grad=True)
+
+    pooled = frequency_pooling(x, mode=mode, gamma=4)
+    pooled.sum().backward()
+
+    torch.testing.assert_close(pooled, torch.zeros_like(pooled))
+    torch.testing.assert_close(x.grad, torch.full_like(x, 0.25))
+
+
 def test_rdp_float16_constant_sequence_has_finite_gradient():
     x = torch.full((1, 4, 2, 3), 2.5, dtype=torch.float16, requires_grad=True)
 
