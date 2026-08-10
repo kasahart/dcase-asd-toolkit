@@ -26,7 +26,7 @@ def hydra_to_pydantic(config: DictConfig) -> MainScoreConfig:
 def main(hydra_cfg: DictConfig) -> None:
     cfg = hydra_to_pydantic(hydra_cfg)
     logger.info(f"Start scoring: {HydraConfig().get().run.dir}")
-    pl.seed_everything(seed=0, workers=True)
+    pl.seed_everything(seed=cfg.seed, workers=True)
 
     output_dir = make_output_dir(cfg, "*_score.csv")
     extract_dict_dict, score_df_dict = get_extract_score_dicts(

@@ -30,7 +30,7 @@ def hydra_to_pydantic(config: DictConfig) -> MainExtractConfig:
 def main(hydra_cfg: DictConfig) -> None:
     cfg = hydra_to_pydantic(hydra_cfg)
     logger.info(f"Start extraction: {HydraConfig().get().run.dir}")
-    pl.seed_everything(seed=0, workers=True)
+    pl.seed_everything(seed=cfg.seed, workers=True)
 
     output_dir = make_output_dir(cfg, "*_extract.npz")
     if cfg.restore_or_scratch == "restore":
