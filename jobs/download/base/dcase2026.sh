@@ -15,13 +15,39 @@ download_archive() {
   url=$2
 
   if ! unzip -tq "${archive}" >/dev/null 2>&1; then
-    curl --fail --location --continue-at - --output "${archive}" "${url}"
+    if ! curl --fail --location --continue-at - --output "${archive}" "${url}" \
+        || ! unzip -tq "${archive}" >/dev/null 2>&1; then
+      fresh_archive="${archive}.fresh"
+      curl --fail --location --output "${fresh_archive}" "${url}"
+      if ! unzip -tq "${fresh_archive}" >/dev/null 2>&1; then
+        echo "Incomplete or corrupt fresh download: ${fresh_archive}" >&2
+        return 1
+      fi
+      mv -f -- "${fresh_archive}" "${archive}"
+    fi
   fi
   if ! unzip -tq "${archive}" >/dev/null 2>&1; then
     echo "Incomplete or corrupt archive after download: ${archive}" >&2
     return 1
   fi
-  unzip -n "${archive}"
+
+  staging_dir=$(mktemp -d ".${archive}.extract.XXXXXX")
+  if ! unzip -q "${archive}" -d "${staging_dir}"; then
+    echo "Failed to extract archive into staging directory: ${archive}" >&2
+    return 1
+  fi
+  (
+    cd "${staging_dir}"
+    find . -type f -print0
+  ) | while IFS= read -r -d '' relative_path; do
+    relative_path=${relative_path#./}
+    source_path="${staging_dir}/${relative_path}"
+    mkdir -p "$(dirname "${relative_path}")"
+    temporary_path="${relative_path}.dcase-download-tmp"
+    cp -p -- "${source_path}" "${temporary_path}"
+    mv -f -- "${temporary_path}" "${relative_path}"
+  done
+  rm -rf -- "${staging_dir}"
 }
 
 # Download development data.

@@ -54,7 +54,9 @@ def _prepare_download_tree(tmp_path, *, partial_archive=None):
     return data_dir, evaluator_dir
 
 
-def _fake_command_environment(tmp_path, *, evaluator_dirty=False):
+def _fake_command_environment(
+    tmp_path, *, evaluator_dirty=False, resume_produces_valid_archive=True
+):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     log_path = tmp_path / "commands.log"
@@ -68,13 +70,20 @@ def _fake_command_environment(tmp_path, *, evaluator_dirty=False):
 set -eu
 printf 'curl %s\n' "$*" >> "${DCASE_TEST_LOG}"
 archive=
+resume=0
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--output" ]; then
     shift
     archive=$1
+  elif [ "$1" = "--continue-at" ]; then
+    resume=1
+    shift
   fi
   shift
 done
+if [ "${resume}" = 1 ] && [ "${DCASE_TEST_RESUME_VALID}" = 0 ]; then
+  exit 0
+fi
 printf complete > "${archive}"
 """,
     )
@@ -85,8 +94,13 @@ set -eu
 if [ "$1" = "-tq" ]; then
   [ "$(cat "$2")" = complete ]
 else
-  printf 'unzip %s\n' "$2" >> "${DCASE_TEST_LOG}"
-  [ "$(cat "$2")" = complete ]
+  archive=$2
+  destination=$4
+  printf 'unzip %s\n' "${archive}" >> "${DCASE_TEST_LOG}"
+  [ "$(cat "${archive}")" = complete ]
+  payload_dir="${destination}/${archive%.zip}"
+  mkdir -p "${payload_dir}"
+  printf complete > "${payload_dir}/payload.wav"
 fi
 """,
     )
@@ -117,6 +131,9 @@ esac
             "DCASE_TEST_DIRTY": "1" if evaluator_dirty else "0",
             "DCASE_TEST_LOG": str(log_path),
             "DCASE_TEST_REV": revision,
+            "DCASE_TEST_RESUME_VALID": (
+                "1" if resume_produces_valid_archive else "0"
+            ),
         }
     )
     return env, log_path
@@ -127,6 +144,14 @@ def test_downloader_resumes_partial_archive_before_extracting(tmp_path):
     data_dir, _ = _prepare_download_tree(
         tmp_path, partial_archive=archive_name
     )
+    interrupted_output = (
+        data_dir
+        / "dcase2026/dev_data/raw"
+        / archive_name.removesuffix(".zip")
+        / "payload.wav"
+    )
+    interrupted_output.parent.mkdir()
+    interrupted_output.write_text("partial")
     env, log_path = _fake_command_environment(tmp_path)
 
     result = subprocess.run(
@@ -147,6 +172,39 @@ def test_downloader_resumes_partial_archive_before_extracting(tmp_path):
     assert (
         data_dir / "dcase2026/dev_data/raw" / archive_name
     ).read_text() == "complete"
+    assert interrupted_output.read_text() == "complete"
+
+
+def test_downloader_restarts_corrupt_archive_from_zero(tmp_path):
+    archive_name = "dev_ToyCar_r2.zip"
+    data_dir, _ = _prepare_download_tree(
+        tmp_path, partial_archive=archive_name
+    )
+    archive = data_dir / "dcase2026/dev_data/raw" / archive_name
+    archive.write_text("corrupt-full-length")
+    env, log_path = _fake_command_environment(
+        tmp_path, resume_produces_valid_archive=False
+    )
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT), str(data_dir)],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    curl_entries = [
+        entry
+        for entry in log_path.read_text().splitlines()
+        if entry.startswith("curl ")
+    ]
+    assert len(curl_entries) == 2
+    assert "--continue-at -" in curl_entries[0]
+    assert "--continue-at" not in curl_entries[1]
+    assert f"--output {archive_name}.fresh" in curl_entries[1]
+    assert archive.read_text() == "complete"
 
 
 def test_downloader_rejects_dirty_pinned_evaluator(tmp_path):
